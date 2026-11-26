@@ -1,0 +1,177 @@
+diff --git a/src/base.cpp b/src/base.cpp
+index 3c3ca08..8c91a2a 100644
+--- a/src/base.cpp
++++ b/src/base.cpp
+@@ -25,7 +25,9 @@ namespace rw {
+ 
+ int32 version = 0x36003;
+ int32 build = 0xFFFF;
+-#ifdef RW_PS2
++#ifdef RW_XSDK
++	int32 platform = PLATFORM_D3D9;
++#elif defined(RW_PS2)
+ 	int32 platform = PLATFORM_PS2;
+ #elif RW_WDGL
+ 	int32 platform = PLATFORM_WDGL;
+diff --git a/src/charset.cpp b/src/charset.cpp
+index 5188b80..1cb26c3 100644
+--- a/src/charset.cpp
++++ b/src/charset.cpp
+@@ -12,11 +12,14 @@
+ #include "ps2/rwps2.h"
+ #include "d3d/rwd3d.h"
+ #include "gl/rwgl3.h"
++#ifdef RW_XSDK
++#include "rw_xsdk_types.h"
++#endif
+ 
+ 
+ #define PLUGIN_ID 1000	// TODO: find a better ID
+ 
+-#ifndef RW_NULL
++#if !defined(RW_NULL) || defined(RW_XSDK)
+ 
+ #ifdef RWHALFPIXEL
+ #define HALFPX (0.5f)
+diff --git a/src/engine.cpp b/src/engine.cpp
+index 0583cb3..f6e7b2b 100644
+--- a/src/engine.cpp
++++ b/src/engine.cpp
+@@ -17,6 +17,9 @@
+ #include "d3d/rwd3d9.h"
+ #include "gl/rwgl3.h"
+ #include "gl/rwwdgl.h"
++#ifdef RW_XSDK
++#include "rw_xsdk_backend.h"
++#endif
+ 
+ #define PLUGIN_ID 0
+ 
+@@ -236,6 +239,9 @@ Engine::init(MemoryFunctions *memfuncs)
+ 	d3d9::registerPlatformPlugins();
+ 	wdgl::registerPlatformPlugins();
+ 	gl3::registerPlatformPlugins();
++#ifdef RW_XSDK
++	xsdk::registerPlatformPlugins();
++#endif
+ 
+ 	Engine::state = Initialized;
+ 	return 1;
+@@ -264,7 +270,9 @@ Engine::open(EngineOpenParams *p)
+ 
+ 	// Initialize device
+ 	// Device and possibly OS specific!
+-#ifdef RW_PS2
++#ifdef RW_XSDK
++	engine->device = xsdk::renderdevice;
++#elif defined(RW_PS2)
+ 	engine->device = ps2::renderdevice;
+ #elif RW_GL3
+ 	engine->device = gl3::renderdevice;
+@@ -274,7 +282,11 @@ Engine::open(EngineOpenParams *p)
+ 	engine->device = null::renderdevice;
+ #endif
+ 
+-	engine->device.system(DEVICEOPEN, (void*)p, 0);
++	if(!engine->device.system(DEVICEOPEN, (void*)p, 0)){
++		rwFree(engine);
++		engine = nil;
++		return 0;
++	}
+ 
+ 	engine->dummyDefaultPipeline = ObjPipeline::create();
+ 	for(uint i = 0; i < NUM_PLATFORMS; i++){
+@@ -308,13 +320,20 @@ Engine::start(void)
+ 		return 0;
+ 	}
+ 
+-	engine->device.system(DEVICEINIT, nil, 0);
++	if(!engine->device.system(DEVICEINIT, nil, 0))
++		return 0;
+ 
+ 	Engine::s_plglist.construct(engine);
+ 	for(uint i = 0; i < NUM_PLATFORMS; i++)
+ 		Driver::s_plglist[i].construct(rw::engine->driver[i]);
+ 
+-	engine->device.system(DEVICEFINALIZE, nil, 0);
++	if(!engine->device.system(DEVICEFINALIZE, nil, 0)){
++		for(uint i = NUM_PLATFORMS; i > 0; --i)
++			Driver::s_plglist[i-1].destruct(engine->driver[i-1]);
++		Engine::s_plglist.destruct(engine);
++		engine->device.system(DEVICETERM, nil, 0);
++		return 0;
++	}
+ 
+ 	// Register some image formats. Or should we leave that to the user?
+ 	Image::registerFileFormat("tga", readTGA, writeTGA);
+diff --git a/src/hanim.cpp b/src/hanim.cpp
+index 6bc7c5e..0687bb5 100644
+--- a/src/hanim.cpp
++++ b/src/hanim.cpp
+@@ -180,11 +180,27 @@ HAnimHierarchy::updateMatrices(void)
+ 
+ 		// TODO: here we could update LTM
+ 
+-		if(node->flags & PUSH)
++		// One branch on the two-bit operation preserves the original stack
++		// semantics without GCC's mcrf condition-copy between adjacent tests.
++		// The Xenia interpreter used with XSDK skips that instruction, which
++		// otherwise attaches sibling limbs to the preceding branch.
++		switch(node->flags & (PUSH | POP)){
++		case PUSH:
++			if(sp == &stack[64]){ assert(0 && "HAnim stack overflow"); return; }
+ 			*sp++ = parentMat;
+-		parentMat = curMat;
+-		if(node->flags & POP)
++			parentMat = curMat;
++			break;
++		case POP:
++			if(sp == stack){ assert(0 && "HAnim stack underflow"); return; }
+ 			parentMat = *--sp;
++			break;
++		case PUSH | POP:
++			// Push followed by pop leaves the previous parent unchanged.
++			break;
++		default:
++			parentMat = curMat;
++			break;
++		}
+ 		assert(sp >= stack);
+ 		assert(sp <= &stack[64]);
+ 
+diff --git a/src/raster.cpp b/src/raster.cpp
+index c7ebffe..a052d9b 100644
+--- a/src/raster.cpp
++++ b/src/raster.cpp
+@@ -15,6 +15,9 @@
+ //#include "d3d/rwd3d8.h"
+ //#include "d3d/rwd3d9.h"
+ #include "gl/rwgl3.h"
++#ifdef RW_XSDK
++#include "rw_xsdk_backend.h"
++#endif
+ 
+ #define PLUGIN_ID 0
+ 
+@@ -109,6 +112,10 @@ Raster::lock(int32 level, int32 lockMode)
+ void
+ Raster::unlock(int32 level)
+ {
++#ifdef RW_XSDK
++	if(this->privateFlags & Raster::PRIVATELOCK_WRITE)
++		xsdk::invalidateRaster(this);
++#endif
+ 	engine->driver[this->platform]->rasterUnlock(this, level);
+ }
+ 
+@@ -121,6 +128,10 @@ Raster::lockPalette(int32 lockMode)
+ void
+ Raster::unlockPalette(void)
+ {
++#ifdef RW_XSDK
++	if(this->privateFlags & Raster::PRIVATELOCK_WRITE_PALETTE)
++		xsdk::invalidateRaster(this);
++#endif
+ 	engine->driver[this->platform]->rasterUnlockPalette(this);
+ }
+ 

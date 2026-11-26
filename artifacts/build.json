@@ -1,0 +1,13 @@
+{
+  "date": "2026-11-26",
+  "sha256": "547fa0321cf8b5f60fefa5249a9da65e8ee0637e1b4134e7083c5fe9141c1f56",
+  "magic": "XEX2",
+  "sdk": "open XSDK",
+  "status": "internal WIP, not a stable release",
+  "game_assets_included": false,
+  "render_target": "1280x720",
+  "defaults": {
+    "cap": 30,
+    "fxaa": false
+  }
+}

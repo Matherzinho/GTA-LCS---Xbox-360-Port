@@ -1,0 +1,9 @@
+GTA LCS Xbox 360 - requisitos aceitos
+- XSDK aberto existente, sem dependencia do XDK da Microsoft.
+- Renderizacao interna real em 1280x720. Upscale nao atende ao requisito.
+- Widescreen 16:9 preservando proporcoes de camera, HUD, radar, textos e imagens.
+- Meta obrigatoria de entrega: 30 FPS estaveis, validada no Xbox fisico.
+- Primeira implementacao em ingles; PT-BR fica para depois.
+- Campanha e atividades originais, audio e saves funcionais.
+- Nao entregar um renderer nulo ou teste de inicializacao como jogo pronto.
+- Originais em pasta original do usuario preservados; desenvolvimento isolado em work/lcs.

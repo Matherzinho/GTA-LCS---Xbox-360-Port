@@ -1,0 +1,150 @@
+GTA LCS Xbox 360 - estado do trabalho, 26/11/2026
+
+BUILD INTERNA XSDK
+Menu real em ingles, cidade, introducao e gameplay basico em 1280x720.
+Audio nativo substitui o backend silencioso: efeitos PCM de sfx.RAW/sfx.sdt,
+radio/falas/cutscenes VB/VAG stereo, mixagem a 48 kHz pela API de audio do XSDK.
+Mixer e decodificador em threads separadas, ring buffer e cache de efeitos de 32 MB.
+Pan, atenuacao 3D, volumes/fades, loops, pausa e relogio de stream implementados.
+Sem reverb e sem radio MP3 personalizada. Leituras iniciais de efeitos ainda
+ocorrem no thread do jogo; impacto em hardware real nao medido.
+
+TESTES NO XENIA
+Sete diagnosticos passaram: dados, render, modelo Kuruma, I/O, GXT, cena e audio.
+Audio: saida real do mixer capturada, pan isolado L/R e fala stereo verificados;
+pausa/retomada/parada conferidas pelo proprio backend. Ver audio-validation.json,
+audio-probe.wav e game-audio.wav em logs. Nao houve escuta em Xbox fisico.
+Teste integrado usa entradas de controle pelo adaptador de producao, caminha,
+entra num Kuruma com Y, acelera/esterce, freia e sai com Y.
+O carro e criado e Toni posicionado junto a porta apenas na preparacao do teste.
+Nao e uma verificacao de controle fisico ou campanha inteira.
+Resultados detalhados e hashes: logs/gameplay-validation.json e safehouse-validation.json.
+
+SALVAMENTO - SAFEHOUSE VALIDADA NO XENIA (26/11/2026)
+PASS: gravar no menu real, carregar, sobrescrever e carregar novamente,
+encerrar o Xenia e carregar pelo menu inicial de outro processo.
+Recuperados vida 100, $100, 1 missao concluida, progresso 1, VIC1, roupa plr,
+visitas a safehouse e posicao. Em todos os ciclos Toni caminhou, entrou,
+dirigiu, freou e saiu do carro; a missao seguinte Slacker (vic2) iniciou.
+Tentar salvar durante a missao manteve o arquivo anterior inalterado.
+Uma copia com checksum adulterado foi rejeitada antes de carregar a cidade.
+
+Corrigidos os tamanhos de pickups, telefones, guindastes e particulas:
+constantes herdadas truncavam os registros do LCS e travavam cargas repetidas.
+Formato LCX4, payload 512 KiB. Saves parciais LCX1/2/3 sao rejeitados.
+O resultado anterior LCX3 foi substituido: o teste ampliado revelou a falha.
+Os testes preparam os gatilhos reais da primeira missao por reposicionamento,
+sem fabricar flags da campanha. Render esparso apenas na preparacao;
+gameplay apos carregar renderiza todos os frames.
+Ver logs/safehouse-validation.json e logs/save-records-validation.json.
+Testado o primeiro cenario de safehouse; campanha inteira e console pendentes.
+
+MISSOES ATE SNUFF - PASS NO XENIA
+PASS: Slacker, Dealing Revenge e Snuff concluidas pelos scripts reais.
+Salvamento pelo menu da safehouse e recarga passaram apos cada uma.
+Cargas em novos processos preservaram o progresso e permitiram continuar.
+Apos Snuff: 4 missoes, progresso 4 (contador, nao porcentagem), $1220,
+vida 89,11, roupa plr, pistola com 58 municoes totais (17 no pente).
+Caminhar, entrar, dirigir, frear e sair do carro passaram apos as cargas.
+O contato da missao seguinte iniciou e o save em missao foi recusado
+sem alterar o arquivo anterior.
+
+Corrigido travamento ao finalizar inimigo no chao: somente os tres
+golpes de arma usam o grupo da arma; o chute no chao usa o grupo STD.
+
+Os testes usam reposicionamento nos objetivos e entradas de controle.
+Nao fabricam conclusoes, flags, recompensas ou contadores da campanha.
+Render esparso durante preparacao; gameplay apos carregar renderiza tudo.
+Nao e campanha inteira nem certificacao de console/30 FPS.
+
+Detalhes e hashes: campaign-validation.json.
+Build final SHA256: ab345f0904ba16bc7ca64f3386cc1053040112aa6aebbce957e0bd63d01b1891
+
+RENDER E LIMITES
+Skin CPU por pesos/ossos e normais, pilha HAnim corrigida, iluminacao basica,
+prelight/emissao de predios e materiais opacos/transparentes implementados.
+Reflexos, rim/gloss, mipmaps e cache de geometria/GPU skin pendentes.
+Xenia usado com renderizacao offscreen; a apresentacao falha na configuracao de LUT.
+Capturas sao reais do render target 1280x720. FPS/presentacao/controle fisico no
+Xbox 360 e campanha completa nao certificados. Scanner ainda encontra opcodes
+que este Xenia ignora em outras funcoes; nao assumir esses caminhos validados.
+
+CAMINHOS
+Projeto: outputs/GTA-LCS-Xbox360
+Fontes: work/lcs/relcs e vendor/librw
+Dados do usuario: work/lcs/data; runtime/data aponta para essa pasta.
+Build: work/lcs/build-xsdk/lcs_boot.xex
+Execucao: work/lcs/runtime/lcs_boot.xex
+Originais pasta original do usuario e entrega do Doom preservados.
+
+REPRODUZIR
+WSL Debian: bash tools/build_boot.sh; bash tools/build_audit.sh.
+PowerShell: tools/test_xenia.ps1; tools/start_boot.ps1 para menu normal.
+-City inicia jogo; -GameplayTest e o diagnostico anterior de nova partida.
+Para a validacao positiva de salvamento, use -SafehouseTest e o watcher dedicado.
+-CaptureAudio grava os primeiros 15 s do mixer; -TracePose captura ossos.
+-LoadSave 'game:\userfiles\...\GTAVCsfN.b' e regressao opcional de carga.
+Safehouse: -SafehouseTest; depois watch_safehouse_test.ps1 -Kind warm.
+Reinicio: -SafehouseResume logs/safehouse-profile-v3.txt; watcher -Kind cold.
+Todos os testes sao opt-in; o launcher limpa flags/resultados antigos.
+check_audio_capture.py analisa especificamente a captura de lcs_audio_probe.
+Patches em patches/ mais platform/ e CMakeLists.txt reproduzem as mudancas locais.
+
+REQUISITOS MANTIDOS
+Somente XSDK aberto; ingles primeiro; 720p nativo/16:9 sem distorcao;
+30 FPS estaveis no console seguem como alvo obrigatorio, ainda nao demonstrado.
+Proximo passo: ampliar campanha, garagens e inventario em outros pontos; validar
+no console fisico a apresentacao, o controle e a meta de 30 FPS.
+
+OTIMIZACAO 2026-11-26
+Capturas periodicas desativadas no modo normal (-Diagnostics para ativar).
+Eixos de luz normalizados uma vez por objeto; 15 cenas A/B identicas.
+Loop normal limitado a 30 Hz; fixtures automaticas preservam cadencia antiga.
+Performance opcional: crie performance-log.txt ao lado do XEX antes de iniciar
+(ou use -PerformanceLog no launcher). LCS PERF no lcs_boot.log registra media,
+maximo e contagem acima de 33,3 ms a cada 300 quadros. Remova o arquivo para
+uso normal. Tempos incluem espera da GPU; nao sao tempos exclusivos de CPU.
+No Xenia offscreen a amostra excedeu o orcamento; nao certifica FPS no console.
+Relatorio: logs/performance-validation.json. Missoes posteriores ainda pendentes.
+
+OTIMIZACAO POR MATERIAL
+Cada material converte/envia somente seu intervalo de indices; ordem e topologia
+preservadas. Cerca de 95,5% menos vertices convertidos na ultima janela medida.
+Xenia: ultima janela de 300 quadros, media 20,061 ms, maximo 27,297 ms; nenhum
+quadro acima de 33,3 ms, em cena fixa da safehouse. Nao equivale a FPS do console.
+Heap ~55,6 MiB; texturas ~13,8 MiB; ring reservado 24 MiB (contadores parciais).
+Sem esgotamento do segmento nas janelas observadas. Tráfego por material menor.
+Render/modelo/cena/rebase de indices/carga fria/andar/dirigir passaram.
+Pacote console-test com default.xex, dados reais e medicao habilitada.
+LEIA-ME.txt explica contadores e protocolo de teste; nao ha automacao no pacote.
+Relatorio: logs/performance-range-validation.json.
+
+REVISAO USB / EXPLOSOES
+Cache IMG limitado a 1 MiB; prefetch sequencial limitado a 64 KiB, sem ampliar
+pedidos aleatorios. Janelas de ate 256 KiB para pedidos grandes.
+Corrigido sucesso indevido em canal ocupado com buffer de destino diferente.
+Prewarm dos efeitos comuns na carga inicial, ate 16 MiB no LRU existente de 32 MiB.
+Passagens duplas de alfa reutilizam vertices/indices sem duplicar o upload.
+I/O ampliado, audio, cena/alpha e imagens identicas passaram no Xenia.
+Stress: 8 carros destruidos, 5 explosoes ativas no pico, renderizacao completa.
+Houve quadros acima de 33,3 ms; o PASS funcional nao certifica 30 FPS.
+A ultima rodada disputou recursos com Xenia AVP (~12 GB RAM), preservado.
+Texturas originais; streaming progressivo baixa/alta nao implementado.
+Pacote console-test atualizado com dados reais e medicao habilitada.
+Detalhes/hashes/limitacoes: logs/usb-stream-validation.json.
+Reproduzir explosoes: tools/start_stress_test.ps1; fixture desligada no pacote.
+
+VIDEO - FXAA / 30-60 FPS / HUD
+Graphics Setup: Frame rate cap = 30 FPS ou Up to 60 FPS; FXAA ON/OFF.
+Padroes: 30 FPS, FXAA OFF. Preferencias mantidas no sistema de configuracao.
+FXAA direcional de 9 amostras, aplicado ao mundo antes do HUD/menu; alvo extra
+alocado sob demanda e constantes imutaveis preparadas uma vez. Custo nao e zero.
+Quad e sampler de tela inteira imutaveis; layout e shaders explicitamente ligados.
+Icones de mao/armas quadrados, ancoragem direita preservada. Radar/miras revisados.
+Projecao e fog calculados uma vez por atomic, reutilizados entre seus materiais.
+Menu real, transicoes 30/60 e FXAA ON/OFF, imagem filtrada e HUD nitido passaram.
+15 cenas anteriores identicas; filtro mudou apenas 726 pixels de borda na cena
+sintetica, mantendo cores planas e overlay posterior. Save frio/andar/dirigir passaram.
+Ate 60 FPS e modo experimental, sem certificacao de fisica/scripts a 60 no console.
+30 FPS estaveis em hardware seguem pendentes. Relatorio: logs/video-validation.json.
+Pacote console-test atualizado; copie inteiro e execute default.xex.

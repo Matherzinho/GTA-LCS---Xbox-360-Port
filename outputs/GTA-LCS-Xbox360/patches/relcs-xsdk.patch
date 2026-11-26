@@ -1,0 +1,2123 @@
+diff --git a/src/animation/AnimManager.cpp b/src/animation/AnimManager.cpp
+index d0763ef..91392a3 100644
+--- a/src/animation/AnimManager.cpp
++++ b/src/animation/AnimManager.cpp
+@@ -1,4 +1,5 @@
+ #include "common.h"
++#include "lcs_binary.h"
+ 
+ #include "General.h"
+ #include "RwHelper.h"
+@@ -1490,20 +1491,23 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
+ 
+ 	// block name
+ 	RwStreamRead(stream, &anpk, sizeof(IfpHeader));
++	anpk.size=LittleU32(anpk.size);
+ 	ROUNDSIZE(anpk.size);
+ 	RwStreamRead(stream, &info, sizeof(IfpHeader));
++	info.size=LittleU32(info.size);
+ 	ROUNDSIZE(info.size);
++	if(info.size>sizeof(buf)) { printf("LCS IFP: oversized header\n"); return; }
+ 	RwStreamRead(stream, buf, info.size);
+ 	CAnimBlock *animBlock = GetAnimationBlock(buf+4);
+ 	if(animBlock){
+ 		if(animBlock->numAnims == 0){
+-			animBlock->numAnims = *(int*)buf;
++			animBlock->numAnims = LittleI32(*(int*)buf);
+ 			animBlock->firstIndex = ms_numAnimations;
+ 		}
+ 	}else{
+ 		animBlock = &ms_aAnimBlocks[ms_numAnimBlocks++];
+ 		strncpy(animBlock->name, buf+4, MAX_ANIMBLOCK_NAME);
+-		animBlock->numAnims = *(int*)buf;
++		animBlock->numAnims = LittleI32(*(int*)buf);
+ 		animBlock->firstIndex = ms_numAnimations;
+ 	}
+ 
+@@ -1517,7 +1521,9 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
+ 
+ 		// animation name
+ 		RwStreamRead(stream, &name, sizeof(IfpHeader));
++	name.size=LittleU32(name.size);
+ 		ROUNDSIZE(name.size);
++		if(name.size>sizeof(buf)) { printf("LCS IFP: oversized header\n"); return; }
+ 		RwStreamRead(stream, buf, name.size);
+ 		hier->SetName(buf);
+ 
+@@ -1540,31 +1546,38 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
+ 
+ 		// DG info has number of nodes/sequences
+ 		RwStreamRead(stream, (char*)&dgan, sizeof(IfpHeader));
++	dgan.size=LittleU32(dgan.size);
+ 		ROUNDSIZE(dgan.size);
+ 		RwStreamRead(stream, (char*)&info, sizeof(IfpHeader));
++	info.size=LittleU32(info.size);
+ 		ROUNDSIZE(info.size);
++		if(info.size>sizeof(buf)) { printf("LCS IFP: oversized header\n"); return; }
+ 		RwStreamRead(stream, buf, info.size);
+-		hier->numSequences = *(int*)buf;
++		hier->numSequences = LittleI32(*(int*)buf);
+ 		hier->sequences = new CAnimBlendSequence[hier->numSequences];
+ 
+ 		CAnimBlendSequence *seq = hier->sequences;
+ 		for(k = 0; k < hier->numSequences; k++, seq++){
+ 			// Each node has a name and key frames
+ 			RwStreamRead(stream, &cpan, sizeof(IfpHeader));
++	cpan.size=LittleU32(cpan.size);
+ 			ROUNDSIZE(dgan.size);
+ 			RwStreamRead(stream, &anim, sizeof(IfpHeader));
++	anim.size=LittleU32(anim.size);
+ 			ROUNDSIZE(anim.size);
++			if(anim.size>sizeof(buf)) { printf("LCS IFP: oversized header\n"); return; }
+ 			RwStreamRead(stream, buf, anim.size);
+-			int numFrames = *(int*)(buf+28);
++			int numFrames = LittleI32(*(int*)(buf+28));
+ 			seq->SetName(buf);
+ 			if(anim.size == 44)
+-				seq->SetBoneTag(*(int*)(buf+40));
++				seq->SetBoneTag(LittleI32(*(int*)(buf+40)));
+ 			if(numFrames == 0)
+ 				continue;
+ 
+ 			bool hasScale = false;
+ 			bool hasTranslation = false;
+ 			RwStreamRead(stream, &info, sizeof(info));
++	info.size=LittleU32(info.size);
+ 			if(strncmp(info.ident, "KRTS", 4) == 0){
+ 				hasScale = true;
+ 				seq->SetNumFrames(numFrames, true, compressHier);
+@@ -1580,6 +1593,7 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
+ 			for(l = 0; l < numFrames; l++){
+ 				if(hasScale){
+ 					RwStreamRead(stream, buf, 0x2C);
++					LittleSwap32(buf,0x2C/4);
+ 					CQuaternion rot(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
+ 					rot.Invert();
+ 					CVector trans(fbuf[4], fbuf[5], fbuf[6]);
+@@ -1599,6 +1613,7 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
+ 					}
+ 				}else if(hasTranslation){
+ 					RwStreamRead(stream, buf, 0x20);
++					LittleSwap32(buf,0x20/4);
+ 					CQuaternion rot(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
+ 					rot.Invert();
+ 					CVector trans(fbuf[4], fbuf[5], fbuf[6]);
+@@ -1616,6 +1631,7 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
+ 					}
+ 				}else{
+ 					RwStreamRead(stream, buf, 0x14);
++					LittleSwap32(buf,0x14/4);
+ 					CQuaternion rot(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
+ 					rot.Invert();
+ 
+diff --git a/src/collision/ColStore.cpp b/src/collision/ColStore.cpp
+index c50e6cb..3e316bc 100644
+--- a/src/collision/ColStore.cpp
++++ b/src/collision/ColStore.cpp
+@@ -1,4 +1,7 @@
+ #include "common.h"
++#ifdef GTA_LCS_XSDK
++extern "C" void xsdk_log_write(const char*,...);
++#endif
+ 
+ #include "main.h"
+ #include "smallHeap.h"
+@@ -154,10 +157,17 @@ CColStore::LoadCol(int32 slot, uint8 *buffer, int32 bufsize)
+ {
+ 	bool success;
+ 	ColDef *def = GetSlot(slot);
++#ifdef GTA_LCS_XSDK
++ xsdk_log_write("LCS COL load slot=%d name=%s bytes=%d",slot,def->name,bufsize);
++#endif
+ 	if(def->minIndex > def->maxIndex)
+ 		success = CFileLoader::LoadCollisionFileFirstTime(buffer, bufsize, slot);
+ 	else
+ 		success = CFileLoader::LoadCollisionFile(buffer, bufsize, slot);
++	
++#ifdef GTA_LCS_XSDK
++ xsdk_log_write("LCS COL result slot=%d success=%d range=%d..%d",slot,success,def->minIndex,def->maxIndex);
++#endif
+ 	if(success)
+ 		def->isLoaded = true;
+ 	else
+diff --git a/src/control/Phones.cpp b/src/control/Phones.cpp
+index 41f9d76..354f6c1 100644
+--- a/src/control/Phones.cpp
++++ b/src/control/Phones.cpp
+@@ -19,7 +19,7 @@
+ #endif
+ 
+ #ifdef COMPATIBLE_SAVES
+-#define PHONEINFO_SAVE_SIZE 0xA30
++#define PHONEINFO_SAVE_SIZE (2*sizeof(int32) + NUMPHONES*(sizeof(CVector) + 40))
+ #else
+ #define PHONEINFO_SAVE_SIZE sizeof(CPhoneInfo)
+ #endif
+@@ -77,7 +77,8 @@ CPhoneInfo::Update(void)
+ 	}
+ 	bool phoneRings = false;
+ 	bool scratchTheCabinet;
+-	for(int phoneId = 0; phoneId < m_nScriptPhonesMax; phoneId++) {
++	for(int phoneId = 0; phoneId < Min(m_nScriptPhonesMax,NUMPHONES); phoneId++) {
++		if (!m_aPhones[phoneId].m_pEntity) continue;
+ 		if (m_aPhones[phoneId].m_visibleToCam) {
+ 			switch (m_aPhones[phoneId].m_nState) {
+ 				case PHONE_STATE_ONETIME_MESSAGE_SET:
+@@ -210,11 +211,12 @@ INITSAVEBUF
+ #ifdef COMPATIBLE_SAVES
+ 		ReadSaveBuf(&m_aPhones[i].m_vecPos, buf);
+ 		SkipSaveBuf(buf, 6 * 4);
++		memset(m_aPhones[i].m_apMessages,0,sizeof(m_aPhones[i].m_apMessages));
+ 		ReadSaveBuf(&m_aPhones[i].m_repeatedMessagePickupStart, buf);
+ 		int32 tmp;
+ 		ReadSaveBuf(&tmp, buf);
+ 		// It's saved as building pool index in save file, convert it to true entity
+-		m_aPhones[i].m_pEntity = tmp != 0 ? CPools::GetBuildingPool()->GetSlot(tmp - 1) : nil;
++		m_aPhones[i].m_pEntity = tmp > 0 && tmp <= CPools::GetBuildingPool()->GetSize() ? CPools::GetBuildingPool()->GetSlot(tmp - 1) : nil;
+ 		ReadSaveBuf(&m_aPhones[i].m_nState, buf);
+ 		ReadSaveBuf(&m_aPhones[i].m_visibleToCam, buf);
+ 		SkipSaveBuf(buf, 3);
+@@ -281,6 +283,7 @@ CPhoneInfo::GrabPhone(float xPos, float yPos)
+ 			nearestPhoneId = phoneId;
+ 		}
+ 	}
++	if(nearestPhoneId < 0 || m_nScriptPhonesMax >= m_nMax) return -1;
+ 	m_aPhones[nearestPhoneId].m_nState = PHONE_STATE_MESSAGE_REMOVED;
+ 
+ 	CPhone oldFirstPhone = m_aPhones[m_nScriptPhonesMax];
+diff --git a/src/control/Pickups.cpp b/src/control/Pickups.cpp
+index 020083c..b666dcf 100644
+--- a/src/control/Pickups.cpp
++++ b/src/control/Pickups.cpp
+@@ -37,7 +37,12 @@
+ #include "SaveBuf.h"
+ 
+ #ifdef COMPATIBLE_SAVES
++#ifdef GTA_LCS_XSDK
++// LCS CVector includes w: packed pickup records are 56 bytes, not VC 52.
++#define PICKUPS_SAVE_SIZE (NUMPICKUPS * (sizeof(CVector) + 40))
++#else
+ #define PICKUPS_SAVE_SIZE 0x4440
++#endif
+ #else
+ #define PICKUPS_SAVE_SIZE sizeof(aPickUps)
+ #endif
+diff --git a/src/control/Script.cpp b/src/control/Script.cpp
+index fc62aab..14f7ef9 100644
+--- a/src/control/Script.cpp
++++ b/src/control/Script.cpp
+@@ -1,4 +1,5 @@
+ #include "common.h"
++#include "lcs_binary.h"
+ 
+ #include "Script.h"
+ #include "ScriptCommands.h"
+@@ -790,7 +791,11 @@ int32 *CRunningScript::GetPointerToScriptVariable(uint32* pIp, int16 type)
+ int CTheScripts::GetSaveVarIndex(int var)
+ {
+ 	for (int i = 0; i < NumSaveVars; i++) {
+-		if (SavedVarIndices[i] == var)
++		// The index table remains in little-endian SCM bytecode. Do not mutate
++		// it: other script readers also consume the original byte stream.
++		uint16 index; memcpy(&index,(uint8*)SavedVarIndices+2*i,2);
++		index=(uint16)LittleI16((int16)index);
++		if (index == var)
+ 			return i;
+ 	}
+ 	return -1;
+@@ -899,11 +904,15 @@ bool CTheScripts::Init(bool loaddata)
+ 	CFileMgr::Read(mainf, (char*)&MainScriptSize, sizeof(MainScriptSize));
+ 	int nLargestMissionSize = 0;
+ 	CFileMgr::Read(mainf, (char*)&nLargestMissionSize, sizeof(nLargestMissionSize));
++	MainScriptSize=LittleU32(MainScriptSize);
++	nLargestMissionSize=LittleI32(nLargestMissionSize);
+ 	if (!cSmallHeap::msInstance.IsLocked())
+ 		cSmallHeap::msInstance.Lock();
+ 	ScriptSpace = (uint8*)base::cMainMemoryManager::Instance()->Allocate(MainScriptSize + nLargestMissionSize);
+ 	memset(ScriptSpace, 0, MainScriptSize + nLargestMissionSize);
+ 	CFileMgr::Read(mainf, (char*)ScriptSpace, MainScriptSize);
++	{ int32 size=GetSizeOfVariableSpace();
++	  for(int32 i=8;i+4<=size && uint32(i+4)<=MainScriptSize;i+=4) LittleSwap32(ScriptSpace+i,1); }
+ 	gScriptsFile = mainf;
+ 	CFileMgr::SetDir("");
+ 	ReadObjectNamesFromScript();
+diff --git a/src/control/Script5.cpp b/src/control/Script5.cpp
+index 4595249..3405e0c 100644
+--- a/src/control/Script5.cpp
++++ b/src/control/Script5.cpp
+@@ -2203,6 +2203,29 @@ INITSAVEBUF
+ VALIDATESAVEBUF(*size)
+ }
+ 
++#ifdef GTA_LCS_XSDK
++static uint32 savedSwapType[MAX_NUM_BUILDING_SWAPS],savedSwapHandle[MAX_NUM_BUILDING_SWAPS];
++static uint32 savedInvisibleType[MAX_NUM_INVISIBILITY_SETTINGS],savedInvisibleHandle[MAX_NUM_INVISIBILITY_SETTINGS];
++// Resolve after all dynamic pools have been loaded, not while reading scripts.
++static CEntity *savedEntity(uint32 type,uint32 handle) {
++ if(!handle)return nil;uint32 index=handle-1;
++ switch(type){
++ case 1:return index<uint32(CPools::GetTreadablePool()->GetSize())?CPools::GetTreadablePool()->GetSlot(index):nil;
++ case 2:return index<uint32(CPools::GetBuildingPool()->GetSize())?CPools::GetBuildingPool()->GetSlot(index):nil;
++ case 3:return index<uint32(CPools::GetObjectPool()->GetSize())?CPools::GetObjectPool()->GetSlot(index):nil;
++ case 4:return index<uint32(CPools::GetDummyPool()->GetSize())?CPools::GetDummyPool()->GetSlot(index):nil;
++ default:return nil;
++ }
++}
++void lcs_restore_saved_script_world() {
++ for(int i=0;i<MAX_NUM_BUILDING_SWAPS;++i){auto &swap=CTheScripts::BuildingSwapArray[i];
++  swap.m_pBuilding=savedSwapType[i]<=2?(CBuilding*)savedEntity(savedSwapType[i],savedSwapHandle[i]):nil;
++  if(swap.m_pBuilding && swap.m_nNewModel>=0 && swap.m_nNewModel<MODELINFOSIZE && CModelInfo::GetModelInfo(swap.m_nNewModel))swap.m_pBuilding->ReplaceWithNewModel(swap.m_nNewModel);
++ }
++ for(int i=0;i<MAX_NUM_INVISIBILITY_SETTINGS;++i){CEntity *e=savedEntity(savedInvisibleType[i],savedInvisibleHandle[i]);CTheScripts::InvisibilitySettingArray[i]=e;if(e)e->bIsVisible=false;}
++}
++#endif
++
+ bool CTheScripts::LoadAllScripts(uint8* buf, uint32 size)
+ {
+ INITSAVEBUF
+@@ -2211,10 +2234,16 @@ INITSAVEBUF
+ 	uint32 tmp;
+ 
+ 	ReadSaveBuf(&varSpace, buf);
++	printf("LCS SAVE READ: globals %u size %u\n",varSpace,size);
+ 	if (*(int32*)&ScriptSpace[0] != *(int32*)&buf[0] || *(int32*)&ScriptSpace[4] != *(int32*)&buf[4]) {
+ 		printf("\n===================================================\nSave Game Mismatch!!!\n");
+ 		return false;
+ 	}
++	if (varSpace != uint32(GetSizeOfVariableSpace()) || size < varSpace + SCRIPT_DATA_SIZE + SAVE_HEADER_SIZE + 5*sizeof(uint32)) return false;
++#ifdef GTA_LCS_XSDK
++	// Runtime globals (including handles) and resident threads form one graph.
++	for (uint32 i=0; i<varSpace; ++i) ReadSaveBuf(&ScriptSpace[i],buf);
++#else
+ 	for (uint32 i = 0; i < varSpace; i++) { // this is not exactly what function does
+ 		if (i < 8)
+ 			ReadSaveBuf(&ScriptSpace[i], buf);
+@@ -2223,6 +2252,7 @@ INITSAVEBUF
+ 		else
+ 			SkipSaveBuf(buf, 1);
+ 	}
++#endif
+ 	ReadSaveBuf(&tmp, buf);
+ 	script_assert(tmp == SCRIPT_DATA_SIZE);
+ 	ReadSaveBuf(&OnAMissionFlag, buf);
+@@ -2250,7 +2280,13 @@ INITSAVEBUF
+ 		*/
+ 		/*BuildingSwapArray[i].m_nNewModel = ReadSaveBuf<uint32>(buf);*/
+ 		/*BuildingSwapArray[i].m_nOldModel = ReadSaveBuf<uint32>(buf);*/
++#ifdef GTA_LCS_XSDK
++		savedSwapType[i]=type;savedSwapHandle[i]=handle;
++		ReadSaveBuf(&BuildingSwapArray[i].m_nNewModel,buf);
++		ReadSaveBuf(&BuildingSwapArray[i].m_nOldModel,buf);
++#else
+ 		SkipSaveBuf(buf, 8);
++#endif
+ 		/*
+ 		if (BuildingSwapArray[i].m_pBuilding)
+ 			BuildingSwapArray[i].m_pBuilding->ReplaceWithNewModel(BuildingSwapArray[i].m_nNewModel);
+@@ -2259,6 +2295,9 @@ INITSAVEBUF
+ 	for (uint32 i = 0; i < MAX_NUM_INVISIBILITY_SETTINGS; i++) {
+ 		ReadSaveBuf(&type, buf);
+ 		ReadSaveBuf(&handle, buf);
++#ifdef GTA_LCS_XSDK
++		savedInvisibleType[i]=type;savedInvisibleHandle[i]=handle;
++#endif
+ 		/*
+ 		switch (type) {
+ 		case 0:
+@@ -2289,7 +2328,11 @@ INITSAVEBUF
+ 	///*bPlayerHasMetDebbieHarry = */ReadSaveBuf<uint8>(buf);
+ 	//ReadSaveBuf<uint16>(buf);
+ 
++#ifdef GTA_LCS_XSDK
++	ReadSaveBuf(&bPlayerHasMetDebbieHarry,buf);SkipSaveBuf(buf,2);
++#else
+ 	SkipSaveBuf(buf, 3);
++#endif
+ 
+ 	ReadSaveBuf(&tmp, buf);
+ 	script_assert(tmp == MainScriptSize);
+@@ -2302,8 +2345,21 @@ INITSAVEBUF
+ 	script_assert(tmp16 == NumberOfExclusiveMissionScripts);
+ 	uint32 runningScripts;
+ 	ReadSaveBuf(&runningScripts, buf);
+-	for (uint32 i = 0; i < runningScripts; i++)
+-		CRunningScript().Load(buf);
++	printf("LCS SAVE READ: resident records %u\n",runningScripts);
++#ifdef GTA_LCS_XSDK
++	if (runningScripts > MAX_NUM_SCRIPTS || size != varSpace + SCRIPT_DATA_SIZE + SAVE_HEADER_SIZE + 5*sizeof(uint32) + runningScripts*CRunningScript::nSaveStructSize) return false;
++	// StartNewScript prepends, so restore records backwards to preserve scheduling order.
++	uint8 *records=buf;
++	for (uint32 i=runningScripts; i>0; --i) {
++		uint8 *record=records+(i-1)*CRunningScript::nSaveStructSize;
++		CRunningScript *thread=StartNewScript(0);thread->Load(record);
++		if (thread->m_nIp >= MainScriptSize || thread->m_nStackPointer > MAX_STACK_DEPTH) return false;
++		NextProcessId=Max(NextProcessId,thread->m_nId+1);
++	}
++	buf=records+runningScripts*CRunningScript::nSaveStructSize;
++#else
++	for (uint32 i = 0; i < runningScripts; i++) CRunningScript().Load(buf);
++#endif
+ 	return true;
+ VALIDATESAVEBUF(size)
+ }
+@@ -2319,7 +2375,7 @@ void CRunningScript::Save(uint8*& buf)
+ 		WriteSaveBuf(buf, m_abScriptName[i]);
+ 	WriteSaveBuf(buf, m_nIp);
+ #ifdef CHECK_STRUCT_SIZES
+-	static_assert(MAX_STACK_DEPTH == 6, "Compatibility loss: MAX_STACK_DEPTH != 6");
++	static_assert(MAX_STACK_DEPTH == 16, "Compatibility loss: MAX_STACK_DEPTH != 6");
+ #endif
+ 	for (int i = 0; i < MAX_STACK_DEPTH; i++)
+ 		WriteSaveBuf(buf, m_anStack[i]);
+@@ -2356,7 +2412,7 @@ void CRunningScript::Load(uint8*& buf)
+ 		ReadSaveBuf(&m_abScriptName[i], buf);
+ 	ReadSaveBuf(&m_nIp, buf);
+ #ifdef CHECK_STRUCT_SIZES
+-	static_assert(MAX_STACK_DEPTH == 6, "Compatibility loss: MAX_STACK_DEPTH != 6");
++	static_assert(MAX_STACK_DEPTH == 16, "Compatibility loss: MAX_STACK_DEPTH != 6");
+ #endif
+ 	for (int i = 0; i < MAX_STACK_DEPTH; i++)
+ 		ReadSaveBuf(&m_anStack[i], buf);
+diff --git a/src/core/CdStreamPosix.cpp b/src/core/CdStreamPosix.cpp
+index bc9129e..3c37ebf 100644
+--- a/src/core/CdStreamPosix.cpp
++++ b/src/core/CdStreamPosix.cpp
+@@ -4,6 +4,9 @@
+ #include <signal.h>
+ #include <pthread.h>
+ #include <semaphore.h>
++#if defined(GTA_LCS_XSDK) && !defined(SEM_FAILED)
++#define SEM_FAILED ((sem_t*)-1)
++#endif
+ #include <sys/types.h>
+ #include <unistd.h>
+ #include <sys/time.h>
+diff --git a/src/core/ControllerConfig.cpp b/src/core/ControllerConfig.cpp
+index dbb0bd8..b60899f 100644
+--- a/src/core/ControllerConfig.cpp
++++ b/src/core/ControllerConfig.cpp
+@@ -43,7 +43,7 @@ void CControllerConfigManager::MakeControllerActionsBlank()
+ 	}
+ }
+ 
+-#ifdef RW_GL3
++#ifdef RE3_GLFW_INPUT
+ int MapIdToButtonId(int mapId) {
+ 	switch (mapId) {
+ 		case GLFW_GAMEPAD_BUTTON_A: // Cross
+@@ -97,7 +97,7 @@ int32 CControllerConfigManager::GetJoyButtonJustDown()
+ 		if (m_NewState.rgbButtons[i] & 0x80 && !(m_OldState.rgbButtons[i] & 0x80))
+ 			return i + 1;
+ 	}
+-#elif defined RW_GL3
++#elif defined RE3_GLFW_INPUT
+ 	if (m_NewState.isGamepad) {
+ 		for (int32 i = 0; i < MAX_BUTTONS; i++) {
+ 			if (m_NewState.mappedButtons[i] && !(m_OldState.mappedButtons[i]))
+@@ -2802,7 +2802,7 @@ void CControllerConfigManager::UpdateJoyButtonState(int32 padnumber)
+ 		else
+ 			m_aButtonStates[i] = false;
+ 	}
+-#elif defined RW_GL3
++#elif defined RE3_GLFW_INPUT
+ 	if (m_NewState.isGamepad) {
+ 		for (int32 i = 0; i < MAX_BUTTONS; i++) {
+ 			if (i == GLFW_GAMEPAD_BUTTON_GUIDE)
+diff --git a/src/core/ControllerConfig.h b/src/core/ControllerConfig.h
+index d61e23e..9f813be 100644
+--- a/src/core/ControllerConfig.h
++++ b/src/core/ControllerConfig.h
+@@ -106,7 +106,7 @@ class CControllerState;
+ 
+ #define ACTIONNAME_LENGTH 40
+ 
+-#ifdef RW_GL3
++#ifdef RE3_GLFW_INPUT
+ struct GlfwJoyState {
+ 	int8 id;
+ 	bool isGamepad;
+@@ -132,7 +132,7 @@ public:
+ 	};
+ 
+ 	bool                  m_bFirstCapture;
+-#if defined RW_GL3
++#if defined RE3_GLFW_INPUT
+ 	GlfwJoyState           m_OldState;
+ 	GlfwJoyState           m_NewState;
+ #else
+@@ -222,7 +222,7 @@ public:
+ 	void  ResetSettingOrder                   (e_ControllerAction action);
+ };
+ 
+-#ifndef RW_GL3
++#ifndef RE3_GLFW_INPUT
+ VALIDATE_SIZE(CControllerConfigManager, 0x143C);
+ #endif
+ 
+diff --git a/src/core/Directory.cpp b/src/core/Directory.cpp
+index 0534406..bd6dd69 100644
+--- a/src/core/Directory.cpp
++++ b/src/core/Directory.cpp
+@@ -3,6 +3,9 @@
+ #include "General.h"
+ #include "FileMgr.h"
+ #include "Directory.h"
++#ifdef GTA_LCS_XSDK
++#include <lcs_endian.h>
++#endif
+ 
+ CDirectory::CDirectory(int32 maxEntries)
+  : numEntries(0), maxEntries(maxEntries)
+@@ -22,8 +25,13 @@ CDirectory::ReadDirFile(const char *filename)
+ 	DirectoryInfo dirinfo;
+ 
+ 	fd = CFileMgr::OpenFile(filename, "rb");
+-	while(CFileMgr::Read(fd, (char*)&dirinfo, sizeof(dirinfo)))
++	while(CFileMgr::Read(fd, (char*)&dirinfo, sizeof(dirinfo)) == sizeof(dirinfo)) {
++#ifdef GTA_LCS_XSDK
++		dirinfo.offset = lcs_load_u32le(&dirinfo.offset);
++		dirinfo.size = lcs_load_u32le(&dirinfo.size);
++#endif
+ 		AddItem(dirinfo);
++	}
+ 	CFileMgr::CloseFile(fd);
+ }
+ 
+@@ -33,7 +41,17 @@ CDirectory::WriteDirFile(const char *filename)
+ 	int fd;
+ 	size_t n;
+ 	fd = CFileMgr::OpenFileForWriting(filename);
++	#ifdef GTA_LCS_XSDK
++	n = 0;
++	for(int32 i=0;i<numEntries;i++){
++		DirectoryInfo disk = entries[i];
++		lcs_store_u32le(&disk.offset,entries[i].offset);
++		lcs_store_u32le(&disk.size,entries[i].size);
++		n += CFileMgr::Write(fd,(char*)&disk,sizeof(disk));
++	}
++#else
+ 	n = CFileMgr::Write(fd, (char*)entries, numEntries*sizeof(DirectoryInfo));
++#endif
+ 	CFileMgr::CloseFile(fd);
+ 	return n == numEntries*sizeof(DirectoryInfo);
+ }
+diff --git a/src/core/FileLoader.cpp b/src/core/FileLoader.cpp
+index e2b6628..ef85593 100644
+--- a/src/core/FileLoader.cpp
++++ b/src/core/FileLoader.cpp
+@@ -1,4 +1,8 @@
+ #include "common.h"
++#include "lcs_binary.h"
++#ifdef GTA_LCS_XSDK
++extern "C" void xsdk_log_write(const char*,...);
++#endif
+ #include <ctype.h>
+ #include "main.h"
+ 
+@@ -188,9 +192,11 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
+ 	fd = CFileMgr::OpenFile(filename, "rb");
+ 	assert(fd > 0);
+ 
+-	while(CFileMgr::Read(fd, (char*)&header, sizeof(header))){
++	while(CFileMgr::Read(fd, (char*)&header, sizeof(header))==sizeof(header)){
++		header.ident=LittleU32(header.ident); header.size=LittleU32(header.size);
++		if(header.size<24 || header.size>sizeof(work_buff)) break;
+ 		assert(header.ident == 'LLOC');
+-		CFileMgr::Read(fd, (char*)work_buff, header.size);
++		if(CFileMgr::Read(fd, (char*)work_buff, header.size)!=header.size) break;
+ 		memcpy(modelname, work_buff, 24);
+ 
+ 		mi = CModelInfo::GetModelInfo(modelname, nil);
+@@ -225,9 +231,10 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
+ 
+ 	while(size > 8){
+ 		header = (ColHeader*)buffer;
+-		modelsize = header->size;
+-		if(header->ident != 'LLOC')
++		modelsize = LittleU32(header->size);
++		if(LittleU32(header->ident) != 'LLOC')
+ 			return size-8 < CDSTREAM_SECTOR_SIZE;
++		if(modelsize<24 || modelsize>size-8 || modelsize-24>sizeof(work_buff)) return false;
+ 		memcpy(modelname, buffer+8, 24);
+ 		memcpy(work_buff, buffer+32, modelsize-24);
+ 		size -= 32 + (modelsize-24);
+@@ -259,9 +266,10 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
+ 
+ 	while(size > 8){
+ 		header = (ColHeader*)buffer;
+-		modelsize = header->size;
+-		if(header->ident != 'LLOC')
++		modelsize = LittleU32(header->size);
++		if(LittleU32(header->ident) != 'LLOC')
+ 			return size-8 < CDSTREAM_SECTOR_SIZE;
++		if(modelsize<24 || modelsize>size-8 || modelsize-24>sizeof(work_buff)) return false;
+ 		memcpy(modelname, buffer+8, 24);
+ 		memcpy(work_buff, buffer+32, modelsize-24);
+ 		size -= 32 + (modelsize-24);
+@@ -286,43 +294,50 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
+ 	return true;
+ }
+ 
++// .col files are little-endian and the model data in the buffer is not
++// always aligned: these read them on any host
++static inline float ColF32(const uint8 *p) { float f; memcpy(&f, p, 4); return LittleF32(f); }
++static inline int32 ColI32(const uint8 *p) { int32 i; memcpy(&i, p, 4); return LittleI32(i); }
++static inline int16 ColI16(const uint8 *p) { int16 i; memcpy(&i, p, 2); return LittleI16(i); }
++static inline CVector ColVec(const uint8 *p) { return CVector(ColF32(p), ColF32(p+4), ColF32(p+8)); }
++
+ void
+ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
+ {
+ 	int i;
+ 
+-	model.boundingSphere.radius = Max(*(float*)(buf), 0.1f);
+-	model.boundingSphere.center.x = *(float*)(buf+4);
+-	model.boundingSphere.center.y = *(float*)(buf+8);
+-	model.boundingSphere.center.z = *(float*)(buf+12);
+-	model.boundingBox.min.x = *(float*)(buf+16);
+-	model.boundingBox.min.y = *(float*)(buf+20);
+-	model.boundingBox.min.z = *(float*)(buf+24);
+-	model.boundingBox.max.x = *(float*)(buf+28);
+-	model.boundingBox.max.y = *(float*)(buf+32);
+-	model.boundingBox.max.z = *(float*)(buf+36);
+-	model.numSpheres = *(int16*)(buf+40);
++	model.boundingSphere.radius = Max(ColF32(buf), 0.1f);
++	model.boundingSphere.center.x = ColF32(buf+4);
++	model.boundingSphere.center.y = ColF32(buf+8);
++	model.boundingSphere.center.z = ColF32(buf+12);
++	model.boundingBox.min.x = ColF32(buf+16);
++	model.boundingBox.min.y = ColF32(buf+20);
++	model.boundingBox.min.z = ColF32(buf+24);
++	model.boundingBox.max.x = ColF32(buf+28);
++	model.boundingBox.max.y = ColF32(buf+32);
++	model.boundingBox.max.z = ColF32(buf+36);
++	model.numSpheres = ColI16(buf+40);
+ 	buf += 44;
+ 	if(model.numSpheres > 0){
+ 		model.spheres = new CColSphere[model.numSpheres];
+ 		REGISTER_MEMPTR(&model.spheres);
+ 		for(i = 0; i < model.numSpheres; i++){
+-			float radius = *(float*)buf;
++			float radius = ColF32(buf);
+ 			if(radius > model.boundingSphere.radius)
+ 				model.boundingSphere.radius = radius + 0.01f;
+-			model.spheres[i].Set(radius, *(CVector*)(buf+4), buf[16], buf[17]);
++			model.spheres[i].Set(radius, ColVec(buf+4), buf[16], buf[17]);
+ 			buf += 20;
+ 		}
+ 	}else
+ 		model.spheres = nil;
+ 
+-	model.numLines = *(int16*)buf;
++	model.numLines = ColI16(buf);
+ 	buf += 4;
+ 	if(model.numLines > 0){
+ 		//model.lines = new CColLine[model.numLines];;
+ 		REGISTER_MEMPTR(&model.lines);
+ 		for(i = 0; i < model.numLines; i++){
+-			//model.lines[i].Set(*(CVector*)buf, *(CVector*)(buf+12));
++			//model.lines[i].Set(ColVec(buf), ColVec(buf+12));
+ 			buf += 24;
+ 		}
+ 	}else
+@@ -330,29 +345,29 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
+ 	model.numLines = 0;
+ 	model.lines = nil;
+ 
+-	model.numBoxes = *(int16*)buf;
++	model.numBoxes = ColI16(buf);
+ 	buf += 4;
+ 	if(model.numBoxes > 0){
+ 		model.boxes = new CColBox[model.numBoxes];
+ 		REGISTER_MEMPTR(&model.boxes);
+ 		for(i = 0; i < model.numBoxes; i++){
+-			model.boxes[i].Set(*(CVector*)buf, *(CVector*)(buf+12), buf[24], buf[25]);
++			model.boxes[i].Set(ColVec(buf), ColVec(buf+12), buf[24], buf[25]);
+ 			buf += 28;
+ 		}
+ 	}else
+ 		model.boxes = nil;
+ 
+-	int32 numVertices = *(int16*)buf;
++	int32 numVertices = ColI16(buf);
+ 	buf += 4;
+ 	if(numVertices > 0){
+ 		model.vertices = new CompressedVector[numVertices];
+ 		REGISTER_MEMPTR(&model.vertices);
+ 		for(i = 0; i < numVertices; i++){
+-			model.vertices[i].Set(*(float*)buf, *(float*)(buf+4), *(float*)(buf+8));
++			model.vertices[i].Set(ColF32(buf), ColF32(buf+4), ColF32(buf+8));
+ #if 0
+-			if(Abs(*(float*)buf) >= 256.0f ||
+-			   Abs(*(float*)(buf+4)) >= 256.0f ||
+-			   Abs(*(float*)(buf+8)) >= 256.0f)
++			if(Abs(ColF32(buf)) >= 256.0f ||
++			   Abs(ColF32(buf+4)) >= 256.0f ||
++			   Abs(ColF32(buf+8)) >= 256.0f)
+ 				printf("%s:Collision volume too big\n", modelname);
+ #endif
+ 			buf += 12;
+@@ -360,13 +375,13 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
+ 	}else
+ 		model.vertices = nil;
+ 
+-	model.numTriangles = *(int16*)buf;
++	model.numTriangles = ColI16(buf);
+ 	buf += 4;
+ 	if(model.numTriangles > 0){
+ 		model.triangles = new CColTriangle[model.numTriangles];
+ 		REGISTER_MEMPTR(&model.triangles);
+ 		for(i = 0; i < model.numTriangles; i++){
+-			model.triangles[i].Set(*(int32*)buf, *(int32*)(buf+4), *(int32*)(buf+8), buf[12]);
++			model.triangles[i].Set(ColI32(buf), ColI32(buf+4), ColI32(buf+8), buf[12]);
+ 			buf += 16;
+ 
+ 			// skip small triangles
+@@ -1248,6 +1263,9 @@ CFileLoader::LoadScene(const char *filename)
+ void
+ CFileLoader::LoadObjectInstance(const char *line)
+ {
++#ifdef GTA_LCS_XSDK
++	static unsigned instances; unsigned trace=++instances;
++#endif
+ 	int id;
+ 	char name[24];
+ 	RwV3d trans, scale, axis;
+@@ -1325,6 +1343,9 @@ CFileLoader::LoadObjectInstance(const char *line)
+ 	}
+ 
+ 	RwMatrixDestroy(xform);
++#ifdef GTA_LCS_XSDK
++	if(trace<4 || trace%256==0) xsdk_log_write("LCS IPL instance %u complete",trace);
++#endif
+ }
+ 
+ void
+diff --git a/src/core/FileMgr.cpp b/src/core/FileMgr.cpp
+index 32aa404..43e3926 100644
+--- a/src/core/FileMgr.cpp
++++ b/src/core/FileMgr.cpp
+@@ -1,5 +1,6 @@
+ #define _CRT_SECURE_NO_WARNINGS
+ #include <fcntl.h>
++#include <errno.h>
+ #ifdef _WIN32
+ #include <direct.h>
+ #endif
+@@ -246,20 +247,20 @@ CFileMgr::LoadFile(const char *file, uint8 *buf, int maxlen, const char *mode)
+ 	int fd;
+ 	ssize_t n, len;
+ 
++	if(!buf || maxlen<=0) { errno=EINVAL; return -1; }
+ 	fd = myfopen(file, mode);
+ 	if(fd == 0)
+ 		return -1;
+ 	len = 0;
+-	do{
+-		n = myfread(buf + len, 1, 0x4000, fd);
+-#ifndef FIX_BUGS
+-		if (n < 0)
+-			return -1;
+-#endif
++	while(len<maxlen-1){
++		ssize_t want=Min((ssize_t)0x4000,(ssize_t)maxlen-1-len);
++		n = myfread(buf + len, 1, want, fd);
+ 		len += n;
+-		assert(len < maxlen);
+-	}while(n == 0x4000);
++		if(n<want) break;
++	}
+ 	buf[len] = 0;
++	if(ferror(myfiles[fd].file)) { myfclose(fd); errno=EIO; return -1; }
++	if(len==maxlen-1 && myfgetc(fd)!=EOF) { myfclose(fd); errno=EFBIG; return -1; }
+ 	myfclose(fd);
+ 	return len;
+ }
+diff --git a/src/core/Frontend.cpp b/src/core/Frontend.cpp
+index 6dc55e7..8cbbd14 100644
+--- a/src/core/Frontend.cpp
++++ b/src/core/Frontend.cpp
+@@ -518,7 +518,7 @@ CMenuManager::CMenuManager()
+ 	m_PrefsDMA = 1;
+ 	OS_Language = LANG_ENGLISH;
+ 	m_ControlMethod = CONTROL_STANDARD;
+-#ifdef PC_PLAYER_CONTROLS
++#if defined(PC_PLAYER_CONTROLS) && !defined(GTA_LCS_XSDK)
+ 	CCamera::m_bUseMouse3rdPerson = true;
+ #else
+ 	CCamera::m_bUseMouse3rdPerson = false;
+@@ -554,7 +554,9 @@ CMenuManager::CMenuManager()
+ #endif
+ 
+ #ifdef GAMEPAD_MENU
+-#ifdef __SWITCH__
++#if defined(GTA_LCS_XSDK)
++	m_PrefsControllerType = CONTROLLER_XBOX360;
++#elif defined(__SWITCH__)
+ 	m_PrefsControllerType = CONTROLLER_NINTENDO_SWITCH;
+ #else
+ 	m_PrefsControllerType = CONTROLLER_XBOXONE;
+@@ -1180,7 +1182,11 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
+ 					rightText = TheText.Get(m_PrefsVsyncDisp ? "FEM_ON" : "FEM_OFF");
+ 					break;
+ 				case MENUACTION_FRAMELIMIT:
+-					rightText = TheText.Get(m_PrefsFrameLimiter ? "FEM_ON" : "FEM_OFF");
++					#ifdef GTA_LCS_XSDK
++                    rightText = TheText.Get(m_PrefsFrameLimiter ? "XSF30" : "XSF60");
++#else
++                    rightText = TheText.Get(m_PrefsFrameLimiter ? "FEM_ON" : "FEM_OFF");
++#endif
+ 					break;
+ 				case MENUACTION_TRAILS:
+ 					rightText = TheText.Get(CMBlur::BlurOn ? "FEM_ON" : "FEM_OFF");
+@@ -4953,7 +4959,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
+ 					ControlsManager.MakeControllerActionsBlank();
+ 					ControlsManager.InitDefaultControlConfiguration();
+ 					ControlsManager.InitDefaultControlConfigMouse(MousePointerStateHelper.GetMouseSetUp());
+-#if !defined RW_GL3
++#if !defined RE3_GLFW_INPUT
+ 					if (AllValidWinJoys.m_aJoys[JOYSTICK1].m_bInitialised) {
+ 						DIDEVCAPS devCaps;
+ 						devCaps.dwSize = sizeof(DIDEVCAPS);
+diff --git a/src/core/Game.cpp b/src/core/Game.cpp
+index a1ae462..6469c32 100644
+--- a/src/core/Game.cpp
++++ b/src/core/Game.cpp
+@@ -699,7 +699,12 @@ bool CGame::ReInitGameObjectVariables(bool load)
+ 	gPhoneInfo.Initialise();
+ 
+ 	PUSH_MEMID(MEMID_SCRIPT);
++	// Initialise every subsystem before restoring its saved state.
++#ifdef GTA_LCS_XSDK
++	bool res = CTheScripts::Init(false);
++#else
+ 	bool res = CTheScripts::Init(load);
++#endif
+ 	CGangs::Initialise();
+ 	POP_MEMID();
+ 
+@@ -720,6 +725,9 @@ bool CGame::ReInitGameObjectVariables(bool load)
+ 	CScriptPaths::Init();
+ 	CParticle::ReloadConfig();
+ 	CParticle::SetPixelData();
++#ifdef GTA_LCS_XSDK
++	if (load) res = GenericLoad();
++#endif
+ 
+ #ifdef PS2_MENU
+ 	if ( !TheMemoryCard.m_bWantToLoad )
+@@ -749,6 +757,11 @@ void CGame::ReloadIPLs(void)
+ 
+ void CGame::ShutDownForRestart(void)
+ {
++#ifdef GTA_LCS_XSDK
++	// Cutscene objects and hidden-entity references must be released while
++	// the old world/player still exist, before clearing their pools.
++	if (FindPlayerPed()) CCutsceneMgr::DeleteCutsceneData();
++#endif
+ #ifdef USE_TEXTURE_POOL
+ 	_TexturePoolsUnknown(false);
+ #endif
+@@ -834,7 +847,7 @@ void CGame::InitialiseWhenRestarting(void)
+ 			ShutDownForRestart();
+ 			CTimer::Stop();
+ 			CTimer::Initialise();
+-			//FrontEndMenuManager.m_bWantToLoad = false;
++			FrontEndMenuManager.m_bWantToLoad = false;
+ 			ReInitGameObjectVariables(false);
+ 			currLevel = LEVEL_GENERIC;
+ 			CCollision::SortOutCollisionAfterLoad();
+@@ -855,8 +868,11 @@ void CGame::InitialiseWhenRestarting(void)
+ 
+ void CGame::Process(void) 
+ {
++	
+ 	if (FrontEndMenuManager.m_bWantToLoad) {
++#ifndef GTA_LCS_XSDK
+ 		CTheScripts::StartTestScript();
++#endif
+ 		CTheScripts::Process();
+ 		TheCamera.Process();
+ 		CStreaming::LoadScene(TheCamera.GetPosition());
+diff --git a/src/core/MenuScreensCustom.cpp b/src/core/MenuScreensCustom.cpp
+index ca3db58..b608188 100644
+--- a/src/core/MenuScreensCustom.cpp
++++ b/src/core/MenuScreensCustom.cpp
+@@ -1,4 +1,7 @@
+ #include "common.h"
++#ifdef GTA_LCS_XSDK
++#include "gpu/xdev.h"
++#endif
+ #if defined DETECT_JOYSTICK_MENU && defined XINPUT
+ #include <windows.h>
+ #include <xinput.h>
+@@ -109,6 +112,9 @@ void RestoreDefGraphics(int8 action) {
+ 	if (action != FEOPTION_ACTION_SELECT)
+ 		return;
+ 
++	#ifdef GTA_LCS_XSDK
++		xdev_fxaa_enabled=0;
++	#endif
+ 	#ifdef PS2_ALPHA_TEST
+ 		gPS2alphaTest = false;
+ 	#endif
+@@ -431,7 +437,7 @@ CMenuScreenCustom aScreens[] = {
+ 		MENUACTION_BRIGHTNESS,	"FED_BRI", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
+ 		MENUACTION_DRAWDIST,	"FEM_LOD", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
+ 		DENSITY_SLIDERS
+-#ifdef LEGACY_MENU_OPTIONS
++#if defined(LEGACY_MENU_OPTIONS) && !defined(GTA_LCS_XSDK)
+ 		MENUACTION_FRAMESYNC,	"FEM_VSC", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
+ #endif
+ 		MENUACTION_FRAMELIMIT,	"FEM_FRM", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
+@@ -445,7 +451,11 @@ CMenuScreenCustom aScreens[] = {
+ 		MENUACTION_HUD,			"FED_HUD", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
+ 		MENUACTION_SCREENRES,	"FED_RES", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
+ 		VIDEOMODE_SELECTOR
+-		MULTISAMPLING_SELECTOR
++#ifdef GTA_LCS_XSDK
++        MENUACTION_CFO_SELECT, "XSFXAA", { new CCFOSelect(&xdev_fxaa_enabled, "Graphics", "FXAA", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
++#else
++        MULTISAMPLING_SELECTOR
++#endif
+ 		ISLAND_LOADING_SELECTOR
+ 		DUALPASS_SELECTOR
+ 		CUTSCENE_BORDERS_TOGGLE
+@@ -773,11 +783,15 @@ CMenuScreenCustom aScreens[] = {
+ #endif
+ 		MENUACTION_WIDESCREEN,	"FED_WIS", { nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS }, 0, 0, MENUALIGN_LEFT,
+ 		VIDEOMODE_SELECTOR
+-#ifdef LEGACY_MENU_OPTIONS
++#if defined(LEGACY_MENU_OPTIONS) && !defined(GTA_LCS_XSDK)
+ 		MENUACTION_FRAMESYNC,	"FEM_VSC", {nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS}, 0, 0, MENUALIGN_LEFT,
+ #endif
+ 		MENUACTION_FRAMELIMIT,	"FEM_FRM", { nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS }, 0, 0, MENUALIGN_LEFT,
+-		MULTISAMPLING_SELECTOR
++#ifdef GTA_LCS_XSDK
++        MENUACTION_CFO_SELECT, "XSFXAA", { new CCFOSelect(&xdev_fxaa_enabled, "Graphics", "FXAA", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
++#else
++        MULTISAMPLING_SELECTOR
++#endif
+ 		ISLAND_LOADING_SELECTOR
+ 		DUALPASS_SELECTOR
+ #ifdef EXTENDED_COLOURFILTER
+diff --git a/src/core/Pools.cpp b/src/core/Pools.cpp
+index e601b3c..9255dfc 100644
+--- a/src/core/Pools.cpp
++++ b/src/core/Pools.cpp
+@@ -432,7 +432,7 @@ INITSAVEBUF
+ 		CopyFromBuf(buf, mi);
+ 		int ref;
+ 		CopyFromBuf(buf, ref);
+-		char* obuf = new char[sizeof(CObject)];
++		char* obuf = new char[sizeof(CObject)](); // matrix attachment must be null while decoding
+ 		CObject* pBufferObject = (CObject*)obuf;
+ 		CCompressedMatrix tmp;
+ 		CopyFromBuf(buf, tmp);
+diff --git a/src/core/Stats.cpp b/src/core/Stats.cpp
+index 8c6137f..5d4ab1a 100644
+--- a/src/core/Stats.cpp
++++ b/src/core/Stats.cpp
+@@ -583,6 +583,9 @@ void CStats::SaveStats(uint8 *buf, uint32 *size)
+ 		sizeof(CheatedCount) +
+ 		sizeof(FavoriteRadioStationList);
+ 
++#ifdef GTA_LCS_XSDK
++	*size += sizeof(MissionsPassed)+sizeof(BestTimeBombDefusal);
++#endif
+ #define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); buf += sizeof(data);
+ 	CopyToBuf(buf, PeopleKilledByPlayer);
+ 	CopyToBuf(buf, PeopleKilledByOthers);
+@@ -673,6 +676,10 @@ void CStats::SaveStats(uint8 *buf, uint32 *size)
+ 	CopyToBuf(buf, CheatedCount);
+ 	PopulateFavoriteRadioStationList();
+ 	CopyToBuf(buf, FavoriteRadioStationList);
++#ifdef GTA_LCS_XSDK
++	CopyToBuf(buf,MissionsPassed);
++	CopyToBuf(buf,BestTimeBombDefusal);
++#endif
+ 
+ 	assert(buf - buf_start == *size);
+ #undef CopyToBuf
+@@ -772,6 +779,10 @@ void CStats::LoadStats(uint8 *buf, uint32 size)
+ 	CopyFromBuf(buf, LastMissionPassedName);
+ 	CopyFromBuf(buf, CheatedCount);
+ 	CopyFromBuf(buf, FavoriteRadioStationList);
++#ifdef GTA_LCS_XSDK
++	CopyFromBuf(buf,MissionsPassed);
++	CopyFromBuf(buf,BestTimeBombDefusal);
++#endif
+ 
+ 	assert(buf - buf_start == size);
+ #undef CopyFromBuf
+diff --git a/src/core/Streaming.cpp b/src/core/Streaming.cpp
+index 9b8f4a6..ffb47db 100644
+--- a/src/core/Streaming.cpp
++++ b/src/core/Streaming.cpp
+@@ -1,4 +1,5 @@
+ #include "common.h"
++#include "lcs_binary.h"
+ 
+ #include "General.h"
+ #include "Pad.h"
+@@ -430,7 +431,9 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
+ 
+ 	imgSelector = n<<24;
+ 	assert(sizeof(direntry) == 32);
+-	while(CFileMgr::Read(fd, (char*)&direntry, sizeof(direntry))){
++	while(CFileMgr::Read(fd, (char*)&direntry, sizeof(direntry))==sizeof(direntry)){
++		direntry.offset=LittleU32(direntry.offset);
++		direntry.size=LittleU32(direntry.size);
+ 		bool bAddToStreaming = false;
+ 
+ 		if(direntry.size > (uint32)ms_streamingBufferSize)
+diff --git a/src/core/common.h b/src/core/common.h
+index 361e851..65a3a1d 100644
+--- a/src/core/common.h
++++ b/src/core/common.h
+@@ -16,6 +16,11 @@
+ #include <switch.h>
+ #endif
+ 
++#ifdef GTA_LCS_XSDK
++#undef WITHDINPUT
++#define RE3_GLFW_INPUT
++#include <xsdk_input.h>
++#endif
+ #include <stdint.h>
+ #include <string.h>
+ #include <math.h>
+diff --git a/src/core/config.h b/src/core/config.h
+index 0d29ff5..afb6797 100644
+--- a/src/core/config.h
++++ b/src/core/config.h
+@@ -332,6 +332,13 @@ enum Config {
+ #define NEW_RENDERER		// leeds-like world rendering, needs librw
+ #endif
+ 
++#ifdef GTA_LCS_XSDK
++// Bring up the game with the native base pipeline. Extended effects need their
++// own Xenos implementations and must not call the desktop GL/D3D code.
++#undef SCREEN_DROPLETS
++#undef USE_TXD_CDIMAGE
++#endif
++
+ #define FIX_SPRITES	// fix sprites aspect ratio(moon, coronas, particle etc)
+ 
+ #ifndef EXTENDED_COLOURFILTER
+@@ -372,7 +379,7 @@ enum Config {
+ //#	define PS2_MENU_USEALLPAGEICONS
+ #else
+ #	define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
+-#	if defined(XINPUT) || defined(GTA_HANDHELD)
++#	if defined(XINPUT) || defined(GTA_HANDHELD) || defined(GTA_LCS_XSDK)
+ #		define GAMEPAD_MENU		// Add gamepad menu
+ #	endif
+ #	define TRIANGLE_BACK_BUTTON
+diff --git a/src/core/main.cpp b/src/core/main.cpp
+index 881e2a2..490f34f 100644
+--- a/src/core/main.cpp
++++ b/src/core/main.cpp
+@@ -1,4 +1,10 @@
+ #include "common.h"
++#ifdef GTA_LCS_XSDK
++#include "gpu/xdev.h"
++#endif
++#ifdef GTA_LCS_XSDK
++extern "C" void xsdk_log_write(const char*,...);
++#endif
+ #include <time.h>
+ #include "rpmatfx.h"
+ #include "rphanim.h"
+@@ -655,6 +661,9 @@ ResetLoadingScreenBar()
+ void
+ LoadingScreen(const char *str1, const char *str2, const char *splashscreen)
+ {
++#ifdef GTA_LCS_XSDK
++	if(str1 || str2) xsdk_log_write("LCS LOAD: %s | %s",str1?str1:"",str2?str2:"");
++#endif
+ 	CSprite2d *splash;
+ 
+ #ifdef DISABLE_LOADING_SCREEN
+@@ -1640,6 +1649,9 @@ Idle(void *arg)
+ 		TheCamera.RenderMotionBlur();
+ 		tbEndTimer("RenderMotionBlur");
+ 
++		#ifdef GTA_LCS_XSDK
++		xdev_postprocess();
++		#endif
+ 		tbStartTimer(0, "Render2dStuff");
+ 		Render2dStuff();
+ 		tbEndTimer("Render2dStuff");
+diff --git a/src/extras/custompipes.cpp b/src/extras/custompipes.cpp
+index a874343..cff427e 100644
+--- a/src/extras/custompipes.cpp
++++ b/src/extras/custompipes.cpp
+@@ -468,6 +468,10 @@ AttachRimPipe(rw::Clump *clump)
+ void
+ CustomPipeInit(void)
+ {
++#ifdef GTA_LCS_XSDK
++	CreateVehiclePipe(); CreateWorldPipe(); CreateGlossPipe(); CreateRimLightPipes();
++	return;
++#endif
+ 	RwStream *stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, "neo/neo.txd");
+ 	if(stream == nil)
+ 		printf("Error: couldn't open 'neo/neo.txd'\n");
+@@ -493,7 +497,9 @@ CustomPipeShutdown(void)
+ 	DestroyGlossPipe();
+ 	DestroyRimLightPipes();
+ 
++#ifndef GTA_LCS_XSDK
+ 	EnvMapShutdown();
++#endif
+ 
+ 	if(neoTxd){
+ 		neoTxd->destroy();
+diff --git a/src/extras/postfx.cpp b/src/extras/postfx.cpp
+index 84c1d05..cf9135c 100644
+--- a/src/extras/postfx.cpp
++++ b/src/extras/postfx.cpp
+@@ -51,6 +51,9 @@ CPostFX::InitOnce(void)
+ void
+ CPostFX::Open(RwCamera *cam)
+ {
++#ifdef GTA_LCS_XSDK
++	return; // Native bring-up has no postprocess render targets yet.
++#endif
+ 	if(pFrontBuffer)
+ 		Close();
+ 
+@@ -403,6 +406,9 @@ CPostFX::NeedFrontBuffer(int32 type)
+ void
+ CPostFX::GetBackBuffer(RwCamera *cam)
+ {
++#ifdef GTA_LCS_XSDK
++	return;
++#endif
+ 	RwRasterPushContext(pBackBuffer);
+ 	RwRasterRenderFast(RwCameraGetRaster(cam), 0, 0);
+ 	RwRasterPopContext();
+@@ -411,6 +417,9 @@ CPostFX::GetBackBuffer(RwCamera *cam)
+ void
+ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blur, int32 type, uint32 bluralpha)
+ {
++#ifdef GTA_LCS_XSDK
++	return;
++#endif
+ 	PUSH_RENDERGROUP("CPostFX::Render");
+ 
+ 	// LCS PS2 blur is drawn in three passes:
+diff --git a/src/fakerw/rwcore.h b/src/fakerw/rwcore.h
+index 4f690fd..fb2e974 100644
+--- a/src/fakerw/rwcore.h
++++ b/src/fakerw/rwcore.h
+@@ -3,6 +3,9 @@
+ #define RWCORE_H	// needed by CVector
+ 
+ #include <rw.h>
++#ifdef GTA_LCS_XSDK
++#include <rw_xsdk_types.h>
++#endif
+ 
+ #include <rwplcore.h>
+ 
+diff --git a/src/objects/ParticleObject.cpp b/src/objects/ParticleObject.cpp
+index c49044a..3169aee 100644
+--- a/src/objects/ParticleObject.cpp
++++ b/src/objects/ParticleObject.cpp
+@@ -11,7 +11,11 @@
+ #include "screendroplets.h"
+ 
+ #ifdef COMPATIBLE_SAVES
++#ifdef GTA_LCS_XSDK
++#define PARTICLE_OBJECT_SIZEOF (0x84 + sizeof(CVector) - 12)
++#else
+ #define PARTICLE_OBJECT_SIZEOF 0x84
++#endif
+ #else
+ #define PARTICLE_OBJECT_SIZEOF sizeof(CParticleObject)
+ #endif
+diff --git a/src/peds/PedFight.cpp b/src/peds/PedFight.cpp
+index eda59f2..778a759 100644
+--- a/src/peds/PedFight.cpp
++++ b/src/peds/PedFight.cpp
+@@ -26,6 +26,10 @@
+ #include "Glass.h"
+ #include "SpecialFX.h"
+ 
++// Only the three melee weapon moves use the weapon animation group.
++// Ground kicks and hit reactions follow them in the enum but use STD.
++static bool IsWeaponFightMove(int move) { return move >= FIGHTMOVE_MELEE1 && move <= FIGHTMOVE_MELEE3; }
++
+ uint16 nPlayerInComboMove;
+ RpClump* flyingClumpTemp;
+ 
+@@ -1108,10 +1112,10 @@ CPed::StartFightAttack(uint8 buttonPressure)
+ 	m_fightButtonPressure = 0;
+ 
+ 	if (m_curFightMove > FIGHTMOVE_NULL && m_curFightMove != FIGHTMOVE_IDLE) {
+-		animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? ASSOCGRP_STD : weaponInfo->m_AnimToPlay,
++		animAssoc = CAnimManager::BlendAnimation(GetClump(), IsWeaponFightMove(m_curFightMove) ? weaponInfo->m_AnimToPlay : ASSOCGRP_STD,
+ 			tFightMoves[m_curFightMove].animId, 8.0f);
+ 
+-		if (weaponInfo->m_AnimToPlay == ASSOCGRP_KNIFE && m_curFightMove >= FIGHTMOVE_MELEE1) {
++		if (weaponInfo->m_AnimToPlay == ASSOCGRP_KNIFE && IsWeaponFightMove(m_curFightMove)) {
+ 			switch (GetWeapon()->m_eWeaponType) {
+ 				case WEAPONTYPE_SCREWDRIVER:
+ 				case WEAPONTYPE_KNIFE:
+@@ -1544,10 +1548,10 @@ CPed::Fight(void)
+ 
+ 		if (m_curFightMove != FIGHTMOVE_IDLE) {
+ 
+-			animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? ASSOCGRP_STD : weaponInfo->m_AnimToPlay,
++			animAssoc = CAnimManager::BlendAnimation(GetClump(), IsWeaponFightMove(m_curFightMove) ? weaponInfo->m_AnimToPlay : ASSOCGRP_STD,
+ 				tFightMoves[m_curFightMove].animId, 8.0f);
+ 
+-			if (weaponInfo->m_AnimToPlay != ASSOCGRP_KNIFE || m_curFightMove < FIGHTMOVE_MELEE1) {
++			if (weaponInfo->m_AnimToPlay != ASSOCGRP_KNIFE || !IsWeaponFightMove(m_curFightMove)) {
+ 				animAssoc->speed = 0.8f;
+ 			} else {
+ 				switch (GetWeapon()->m_eWeaponType) {
+@@ -2225,7 +2229,7 @@ CPed::FightHitPed(CPed *victim, CVector &touchPoint, CVector &dir, int16 piece)
+ 			victim->InflictDamage(this, WEAPONTYPE_UNARMED, damageMult * 3.0f, (ePedPieceTypes)piece, direction);
+ 	}
+ 
+-	if (CGame::nastyGame && weaponInfo->m_AnimToPlay == ASSOCGRP_KNIFE && m_curFightMove >= FIGHTMOVE_MELEE1
++	if (CGame::nastyGame && weaponInfo->m_AnimToPlay == ASSOCGRP_KNIFE && IsWeaponFightMove(m_curFightMove)
+ 		&& victim->GetIsOnScreen()) {
+ 
+ 		static float particleRightLen = 0.05f;
+diff --git a/src/renderer/Hud.cpp b/src/renderer/Hud.cpp
+index 8b02164..fb2a41b 100644
+--- a/src/renderer/Hud.cpp
++++ b/src/renderer/Hud.cpp
+@@ -457,7 +457,7 @@ void CHud::Draw()
+ 					RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+ 					if (FrontEndMenuManager.m_PrefsShowHud)
+ 						Sprites[WeaponType].Draw(
+-							CRect(PSP_SCREEN_SCALE_X(left), PSP_SCREEN_SCALE_Y(16.0f), PSP_SCREEN_SCALE_X(right), PSP_SCREEN_SCALE_Y(60.0f)),
++							CRect(PSP_SCREEN_SCALE_X(right) - PSP_SCREEN_SCALE_Y(44.0f), PSP_SCREEN_SCALE_Y(16.0f), PSP_SCREEN_SCALE_X(right), PSP_SCREEN_SCALE_Y(60.0f)),
+ 							CRGBA(255, 255, 255, alpha));
+ 				} else {
+ 					CBaseModelInfo *weaponModel = CModelInfo::GetModelInfo(weaponInfo->m_nModelId);
+@@ -478,7 +478,7 @@ void CHud::Draw()
+ 							static CSprite2d sprite;
+ 							sprite.m_pTexture = weaponIcon;
+ 							sprite.Draw(
+-								CRect(PSP_SCREEN_SCALE_X(left), PSP_SCREEN_SCALE_Y(16.0f), PSP_SCREEN_SCALE_X(right), PSP_SCREEN_SCALE_Y(60.0f)),
++								CRect(PSP_SCREEN_SCALE_X(right) - PSP_SCREEN_SCALE_Y(44.0f), PSP_SCREEN_SCALE_Y(16.0f), PSP_SCREEN_SCALE_X(right), PSP_SCREEN_SCALE_Y(60.0f)),
+ 								CRGBA(255, 255, 255, alpha));
+ 							sprite.m_pTexture = nil;
+ #endif
+diff --git a/src/renderer/Renderer.cpp b/src/renderer/Renderer.cpp
+index 28177cc..0d9c8b1 100644
+--- a/src/renderer/Renderer.cpp
++++ b/src/renderer/Renderer.cpp
+@@ -1958,6 +1958,10 @@ DrawEnvMapCoronas(float heading)
+ void
+ CRenderer::GenerateEnvironmentMap(void)
+ {
++#ifdef GTA_LCS_XSDK
++	// The native bring-up draws the scene directly; reflection RTT is pending.
++	return;
++#endif
+ 	// We'll probably do this differently eventually
+ 	// re-using all sorts of stuff here...
+ 
+diff --git a/src/renderer/WaterLevel.cpp b/src/renderer/WaterLevel.cpp
+index 1aa6369..fa154c0 100644
+--- a/src/renderer/WaterLevel.cpp
++++ b/src/renderer/WaterLevel.cpp
+@@ -1,4 +1,5 @@
+ #include "common.h"
++#include "lcs_binary.h"
+ #include "main.h"
+ #include "FileMgr.h"
+ #include "FileLoader.h"
+@@ -136,6 +137,9 @@ CWaterLevel::Initialise(Const char *pWaterDat)
+ 		CFileMgr::Read(hFile, (char *)ms_aWaterRects, sizeof(ms_aWaterRects));
+ 		CFileMgr::Read(hFile, (char *)aWaterBlockList, sizeof(aWaterBlockList));
+ 		CFileMgr::Read(hFile, (char *)aWaterFineBlockList, sizeof(aWaterFineBlockList));
++		ms_nNoOfWaterLevels=LittleI32(ms_nNoOfWaterLevels);
++		LittleSwap32(ms_aWaterZs,sizeof(ms_aWaterZs)/4);
++		LittleSwap32(ms_aWaterRects,sizeof(ms_aWaterRects)/4);
+ 		CFileMgr::CloseFile(hFile);
+ 	}
+ #ifndef MASTER
+diff --git a/src/rw/ClumpRead.cpp b/src/rw/ClumpRead.cpp
+index 9c027dc..eb47ea3 100644
+--- a/src/rw/ClumpRead.cpp
++++ b/src/rw/ClumpRead.cpp
+@@ -1,4 +1,5 @@
+ #include "common.h"
++#include "lcs_binary.h"
+ 
+ struct rpGeometryList
+ {
+@@ -34,6 +35,8 @@ GeometryListStreamRead1(RwStream *stream, rpGeometryList *geomlist)
+ 	if(RwStreamRead(stream, &numGeoms, 4) != 4)
+ 		return nil;
+ 
++	numGeoms = LittleI32(numGeoms);
++	if(numGeoms < 0 || numGeoms > 65536) return nil;
+ 	numberGeometrys = numGeoms/2;
+ 	geomlist->numGeoms = numGeoms;
+ 	if(geomlist->numGeoms > 0){
+@@ -97,10 +100,13 @@ ClumpAtomicStreamRead(RwStream *stream, rwFrameList *frmList, rpGeometryList *ge
+ 	numberGeometrys = 0;
+ 	if(!RwStreamFindChunk(stream, rwID_STRUCT, &size, &version))
+ 		return nil;
+-	assert(size <= sizeof(rpAtomicBinary));
++	if(size != sizeof(rpAtomicBinary)) return nil;
+ 	if(RwStreamRead(stream, &a, size) != size)
+ 		return nil;
+ 
++	LittleSwap32(&a, 4);
++	if(a.frameIndex < 0 || a.frameIndex >= frmList->numFrames ||
++	   a.geomIndex < 0 || (geomList->numGeoms && a.geomIndex >= geomList->numGeoms)) return nil;
+ 	atomic = RpAtomicCreate();
+ 	if(atomic == nil)
+ 		return nil;
+@@ -142,12 +148,14 @@ RpClumpGtaStreamRead1(RwStream *stream)
+ 		return false;
+ 	if(version >= 0x33000){
+ 		assert(size == 12);
+-		if(RwStreamRead(stream, &gClumpInfo, 12) != 12)
++		if(size != 12 || RwStreamRead(stream, &gClumpInfo, 12) != 12)
+ 			return false;
++		LittleSwap32(&gClumpInfo, 3);
+ 	}else{
+ 		assert(size == 4);
+-		if(RwStreamRead(stream, &gClumpInfo, 4) != 4)
++		if(size != 4 || RwStreamRead(stream, &gClumpInfo, 4) != 4)
+ 			return false;
++		LittleSwap32(&gClumpInfo, 1);
+ 	}
+ 
+ 	if(!RwStreamFindChunk(stream, rwID_FRAMELIST, nil, &version))
+diff --git a/src/rw/TexRead.cpp b/src/rw/TexRead.cpp
+index ddb178e..0e13c51 100644
+--- a/src/rw/TexRead.cpp
++++ b/src/rw/TexRead.cpp
+@@ -11,6 +11,9 @@
+ #endif
+ #include "crossplatform.h"
+ #include "platform.h"
++#ifdef GTA_LCS_XSDK
++#include "lcs_endian.h"
++#endif
+ 
+ #include "Timer.h"
+ #ifdef GTA_PC
+@@ -81,8 +84,12 @@ RwTexDictionaryGtaStreamRead(RwStream *stream)
+ 
+ 	if(!RwStreamFindChunk(stream, rwID_STRUCT, &size, &version))
+ 		return nil;
+-	if(RwStreamRead(stream, &numTextures, size) != size)
++	if(size!=4 || RwStreamRead(stream, &numTextures, size) != size)
+ 		return nil;
++#ifdef GTA_LCS_XSDK
++	// TXD STRUCT is a little-endian u16 count followed by a u16 device ID.
++	numTextures = lcs_load_u32le(&numTextures)&0xffff;
++#endif
+ 
+ 	texDict = RwTexDictionaryCreate();
+ 	if(texDict == nil)
+@@ -116,8 +123,11 @@ RwTexDictionaryGtaStreamRead1(RwStream *stream)
+ 	if(!RwStreamFindChunk(stream, rwID_STRUCT, &size, &version))
+ 		return nil;
+ 	assert(size == 4);
+-	if(RwStreamRead(stream, &numTextures, size) != size)
++	if(size!=4 || RwStreamRead(stream, &numTextures, size) != size)
+ 		return nil;
++#ifdef GTA_LCS_XSDK
++	numTextures = lcs_load_u32le(&numTextures)&0xffff;
++#endif
+ 
+ 	texDict = RwTexDictionaryCreate();
+ 	if(texDict == nil)
+diff --git a/src/save/GenericGameStorage.cpp b/src/save/GenericGameStorage.cpp
+index ccf1bec..f1a177e 100644
+--- a/src/save/GenericGameStorage.cpp
++++ b/src/save/GenericGameStorage.cpp
+@@ -44,7 +44,14 @@
+ #define BLOCK_COUNT 22
+ #define SIZE_OF_SIMPLEVARS 0xE8
+ 
++#ifdef GTA_LCS_XSDK
++const uint32 SIZE_OF_ONE_GAME_IN_BYTES = 524288;
++#else
+ const uint32 SIZE_OF_ONE_GAME_IN_BYTES = 201729;
++#endif
++#ifdef GTA_LCS_XSDK
++static const uint32 XSDK_SAVE_MAGIC=0x4C435834; // LCX4: full LCS pickup records, stats, resident threads and 512 KiB payload
++#endif
+ 
+ #ifdef MISSION_REPLAY
+ int8 IsQuickSave;
+@@ -96,16 +103,19 @@ PopulateRadioStationPositionList()
+ do {\
+ 	if (!ReadDataFromFile(file, (uint8 *) &size, 4))\
+ 		return false;\
++	if (size > sizeof(work_buff)) { PcSaveHelper.nErrorCode=SAVESTATUS_ERR_DATA_INVALID; CloseFile(file); return false; }\
+ 	size = align4bytes(size);\
+ 	if (!ReadDataFromFile(file, work_buff, size))\
+ 		return false;\
+-	buf = work_buff;\
++	buf = work_buff; blockEnd=work_buff+size;\
+ } while (0)
+ 
+ #define ReadDataFromBlock(msg,load_func)\
+ do {\
+-	debug(msg);\
++	printf("LCS SAVE READ: %s",msg);\
++	if(buf+sizeof(uint32)>blockEnd){CloseFile(file);PcSaveHelper.nErrorCode=SAVESTATUS_ERR_DATA_INVALID;return false;}\
+ 	ReadDataFromBufferPointer(buf, size);\
++	if(size>uint32(blockEnd-buf)){CloseFile(file);PcSaveHelper.nErrorCode=SAVESTATUS_ERR_DATA_INVALID;return false;}\
+ 	load_func(buf, size);\
+ 	size = align4bytes(size);\
+ 	buf += size;\
+@@ -171,6 +181,10 @@ GenericSave(int file)
+ #else
+ 	WriteDataToBufferPointer(buf, SIZE_OF_ONE_GAME_IN_BYTES);
+ #endif
++
++#ifdef GTA_LCS_XSDK
++	WriteDataToBufferPointer(buf, XSDK_SAVE_MAGIC);
++#endif
+ 	WriteDataToBufferPointer(buf, CGame::currLevel);
+ 	WriteDataToBufferPointer(buf, TheCamera.GetPosition().x);
+ 	WriteDataToBufferPointer(buf, TheCamera.GetPosition().y);
+@@ -181,7 +195,10 @@ GenericSave(int file)
+ 	WriteDataToBufferPointer(buf, CClock::ms_nGameClockMinutes);
+ 	currPad = CPad::GetPad(0);
+ 	WriteDataToBufferPointer(buf, currPad->Mode);
+-	//WriteDataToBufferPointer(buf, CTimer::m_snTimeInMilliseconds);
++
++#ifdef GTA_LCS_XSDK
++	WriteDataToBufferPointer(buf, CTimer::m_snTimeInMilliseconds);
++#endif
+ 	WriteDataToBufferPointer(buf, CTimer::ms_fTimeScale);
+ 	WriteDataToBufferPointer(buf, CTimer::ms_fTimeStep);
+ 	WriteDataToBufferPointer(buf, CTimer::ms_fTimeStepNonClipped);
+@@ -227,6 +244,28 @@ GenericSave(int file)
+ 
+ 	totalSize = buf - work_buff;
+ 
++#ifdef GTA_LCS_XSDK
++	// Same object graph as native LCS memory-card saves.
++	WriteSaveDataBlock(CPools::SavePedPool, "PedPoolSize");
++	WriteSaveDataBlock(CGarages::Save, "GaragesSize");
++	WriteSaveDataBlock(CPools::SaveVehiclePool, "VehiclesSize");
++	WriteSaveDataBlock(CPools::SaveObjectPool, "ObjectsSize");
++	WriteSaveDataBlock(ThePaths.Save, "PathsSize");
++	WriteSaveDataBlock(CCranes::Save, "CranesSize");
++	WriteSaveDataBlock(CPickups::Save, "PickupsSize");
++	WriteSaveDataBlock(gPhoneInfo.Save, "PhonesSize");
++	WriteSaveDataBlock(CRestart::SaveAllRestartPoints, "RestartSize");
++	WriteSaveDataBlock(CRadar::SaveAllRadarBlips, "RadarSize");
++	WriteSaveDataBlock(CTheZones::SaveAllZones, "ZonesSize");
++	WriteSaveDataBlock(CGangs::SaveAllGangData, "GangsSize");
++	WriteSaveDataBlock(CTheCarGenerators::SaveAllCarGenerators, "CarGeneratorsSize");
++	WriteSaveDataBlock(CParticleObject::SaveParticle, "ParticlesSize");
++	WriteSaveDataBlock(cAudioScriptObject::SaveAllAudioScriptObjects, "AudioObjectsSize");
++	WriteSaveDataBlock(CWorld::Players[CWorld::PlayerInFocus].SavePlayerInfo, "PlayerInfoSize");
++	WriteSaveDataBlock(CStats::SaveStats, "StatsSize");
++	WriteSaveDataBlock(CStreaming::MemoryCardSave, "StreamingSize");
++	WriteSaveDataBlock(CPedType::Save, "PedTypesSize");
++#else
+ 	// Save the rest
+ 	//WriteSaveDataBlock(CPools::SavePedPool, "PedPoolSize");
+ 	WriteSaveDataBlock(CGarages::Save, "GaragesSize");
+@@ -251,23 +290,22 @@ GenericSave(int file)
+ 	//WriteSaveDataBlock(CStreaming::MemoryCardSave, "StreamingSize");
+ 	//WriteSaveDataBlock(CPedType::Save, "PedTypeSize");
+ 
++#endif
++
+ 	// sure just write garbage data repeatedly ...
+ #ifndef THIS_IS_STUPID
+ 	memset(work_buff, 0, sizeof(work_buff));
+ #endif
+ 
+-	// Write padding
+-	for (int i = 0; i < 4; i++) {
+-		size = align4bytes(SIZE_OF_ONE_GAME_IN_BYTES - totalSize - 4);
+-		if (size > sizeof(work_buff))
+-			size = sizeof(work_buff);
+-		if (size > 4) {
+-			if (!PcSaveHelper.PcClassSaveRoutine(file, work_buff, size))
+-				return false;
+-			totalSize += size;
+-		}
++	// Native storage has no PS2 memory-card block limit. Bound the payload and
++	// pad in work-buffer chunks; a fixed four-pass loop truncated smaller worlds.
++	if(totalSize > SIZE_OF_ONE_GAME_IN_BYTES-4){PcSaveHelper.nErrorCode=SAVESTATUS_ERR_SAVE_WRITE;return false;}
++	while(totalSize < SIZE_OF_ONE_GAME_IN_BYTES-4){
++		size=Min(uint32(sizeof(work_buff)),SIZE_OF_ONE_GAME_IN_BYTES-totalSize-4);
++		if(!PcSaveHelper.PcClassSaveRoutine(file,work_buff,size))return false;
++		totalSize+=size;
+ 	}
+-	
++
+ 	// Write checksum and close
+ 	CFileMgr::Write(file, (const char *) &CheckSum, sizeof(CheckSum));
+ 	if (CFileMgr::GetErrorReadWrite(file)) {
+@@ -285,7 +323,7 @@ GenericSave(int file)
+ bool
+ GenericLoad()
+ {
+-	uint8 *buf;
++	uint8 *buf, *blockEnd;
+ 	int32 file;
+ 	uint32 size;
+ #ifdef MISSION_REPLAY
+@@ -298,15 +336,23 @@ GenericLoad()
+ 	// Load SimpleVars and Scripts
+ 	CheckSum = 0;
+ 	CDate dummy; // unused
++	printf("LCS SAVE READ: start %s\n",LoadFileName);
+ 	CPad::ResetCheats();
+ 	if (!ReadInSizeofSaveFileBuffer(file, size))
+ 		return false;
++	if(size < 0xF0 || size > sizeof(work_buff)){CloseFile(file);PcSaveHelper.nErrorCode=SAVESTATUS_ERR_DATA_INVALID;return false;}
+ 	size = align4bytes(size);
+-	ReadDataFromFile(file, work_buff, size);
++	if(!ReadDataFromFile(file,work_buff,size))return false;
++	printf("LCS SAVE READ: first block %u\n",size);
++	blockEnd=work_buff+size;
+ 	buf = (work_buff + 0x40);
+ 	ReadDataFromBufferPointer(buf, saveSize);
+ #ifdef MISSION_REPLAY // a hack to keep compatibility but get new data from save
+ 	qs = saveSize >> 24;
++#endif
++#ifdef GTA_LCS_XSDK
++	uint32 magic; ReadDataFromBufferPointer(buf,magic);
++	if(magic!=XSDK_SAVE_MAGIC){CloseFile(file);PcSaveHelper.nErrorCode=SAVESTATUS_ERR_DATA_INVALID;return false;}
+ #endif
+ 	ReadDataFromBufferPointer(buf, CGame::currLevel);
+ 	ReadDataFromBufferPointer(buf, TheCamera.GetMatrix().GetPosition().x);
+@@ -318,7 +364,11 @@ GenericLoad()
+ 	ReadDataFromBufferPointer(buf, CClock::ms_nGameClockMinutes);
+ 	currPad = CPad::GetPad(0);
+ 	ReadDataFromBufferPointer(buf, currPad->Mode);
+-	//ReadDataFromBufferPointer(buf, CTimer::m_snTimeInMilliseconds);
++#ifdef GTA_LCS_XSDK
++	ReadDataFromBufferPointer(buf, CTimer::m_snTimeInMilliseconds);
++	CTimer::m_snPreviousTimeInMilliseconds=CTimer::m_snTimeInMilliseconds;
++	CTimer::m_snTimeInMillisecondsNonClipped=CTimer::m_snTimeInMilliseconds;
++#endif
+ 	ReadDataFromBufferPointer(buf, CTimer::ms_fTimeScale);
+ 	ReadDataFromBufferPointer(buf, CTimer::ms_fTimeStep);
+ 	ReadDataFromBufferPointer(buf, CTimer::ms_fTimeStepNonClipped);
+@@ -365,8 +415,55 @@ GenericLoad()
+ 	if (FrontEndMenuManager.m_nCurrSaveSlot == PAUSE_SAVE_SLOT && qs == 3)
+ 		WaitForMissionActivate = CTimer::GetTimeInMilliseconds() + 2000;
+ #endif
+-	ReadDataFromBlock("Loading Scripts \n", CTheScripts::LoadAllScripts);
++	ReadDataFromBufferPointer(buf, size);
++	printf("LCS SAVE READ: scripts %u\n",size);
++	if (size > uint32(blockEnd-buf) || !CTheScripts::LoadAllScripts(buf,size)) {
++		PcSaveHelper.nErrorCode=SAVESTATUS_ERR_DATA_INVALID; CloseFile(file); return false;
++	}
++	buf += align4bytes(size);
+ 
++#ifdef GTA_LCS_XSDK
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading PedPool \n", CPools::LoadPedPool);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Garages \n", CGarages::Load);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Vehicles \n", CPools::LoadVehiclePool);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Objects \n", CPools::LoadObjectPool);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Paths \n", ThePaths.Load);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Cranes \n", CCranes::Load);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Pickups \n", CPickups::Load);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Phones \n", gPhoneInfo.Load);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Restart \n", CRestart::LoadAllRestartPoints);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Radar \n", CRadar::LoadAllRadarBlips);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Zones \n", CTheZones::LoadAllZones);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Gangs \n", CGangs::LoadAllGangData);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading CarGenerators \n", CTheCarGenerators::LoadAllCarGenerators);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Particles \n", CParticleObject::LoadParticle);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading AudioObjects \n", cAudioScriptObject::LoadAllAudioScriptObjects);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading PlayerInfo \n", CWorld::Players[CWorld::PlayerInFocus].LoadPlayerInfo);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Stats \n", CStats::LoadStats);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading Streaming \n", CStreaming::MemoryCardLoad);
++	LoadSaveDataBlock();
++	ReadDataFromBlock("Loading PedTypes \n", CPedType::Load);
++	extern void lcs_restore_saved_script_world();
++	lcs_restore_saved_script_world();
++#else
+ 	// Load the rest
+ 	//LoadSaveDataBlock();
+ 	//ReadDataFromBlock("Loading PedPool \n", CPools::LoadPedPool);
+@@ -415,6 +512,7 @@ GenericLoad()
+ 	//ReadDataFromBlock("Loading Streaming Stuff \n", CStreaming::MemoryCardLoad);
+ 	//LoadSaveDataBlock();
+ 	//ReadDataFromBlock("Loading PedType Stuff \n", CPedType::Load);
++#endif
+ 	CStreaming::ReInit();
+ 	DMAudio.SetMusicMasterVolume(FrontEndMenuManager.m_PrefsMusicVolume);
+ 	DMAudio.SetEffectsMasterVolume(FrontEndMenuManager.m_PrefsSfxVolume);
+@@ -423,7 +521,9 @@ GenericLoad()
+ 		return false;
+ 	}
+ 
+-	//DoGameSpecificStuffAfterSucessLoad();
++#ifdef GTA_LCS_XSDK
++	DoGameSpecificStuffAfterSucessLoad();
++#endif
+ 	debug("Game successfully loaded \n");
+ 	return true;
+ }
+@@ -566,8 +666,9 @@ CheckDataNotCorrupt(int32 slot, char *name)
+ 			CloseFile(file);
+ 			return false;
+ 		}
+-		if (blocksize > align4bytes(sizeof(work_buff)))
+-			blocksize = sizeof(work_buff) - sizeof(uint32);
++		if (blocksize < 0 || uint32(blocksize) > sizeof(work_buff)) {
++			CloseFile(file); return false;
++		}
+ 		if (!ReadDataFromFile(file, work_buff, align4bytes(blocksize))) {
+ 			CloseFile(file);
+ 			return false;
+@@ -583,8 +684,20 @@ CheckDataNotCorrupt(int32 slot, char *name)
+ 			bytes_processed++;
+ 		}
+ 
+-		if (blocknum == 0)
+-			memcpy(&level, work_buff+4, sizeof(level));
++		if (blocknum == 0) {
++#ifdef GTA_LCS_XSDK
++			uint32 magic=0;if(blocksize<76){CloseFile(file);return false;}
++			memcpy(&magic,work_buff+sizeof(wchar[24])+sizeof(SYSTEMTIME)+sizeof(uint32),sizeof(magic));
++			if(magic!=XSDK_SAVE_MAGIC){CloseFile(file);return false;}
++#endif
++			memcpy(&level, work_buff+
++#ifdef GTA_LCS_XSDK
++			 sizeof(wchar[24])+sizeof(SYSTEMTIME)+2*sizeof(uint32),
++#else
++			 4,
++#endif
++			 sizeof(level));
++		}
+ 		blocknum++;
+ 	}
+ 	int32 _checkSum;
+@@ -613,7 +726,7 @@ RestoreForStartLoad()
+ 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_OPEN;
+ 		return false;
+ 	}
+-	ReadDataFromFile(file, buf, sizeof(buf));
++	if(!ReadDataFromFile(file,buf,sizeof(buf)))return false;
+ 	if (CFileMgr::GetErrorReadWrite(file)) {
+ 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_READ;
+ 		if (!CloseFile(file))
+@@ -621,6 +734,10 @@ RestoreForStartLoad()
+ 		return false;
+ 	} else {
+ 		uint8 *_buf = buf + sizeof(int32) + sizeof(wchar[24]) + sizeof(SYSTEMTIME) + sizeof(SIZE_OF_ONE_GAME_IN_BYTES);
++#ifdef GTA_LCS_XSDK
++		uint32 magic; ReadDataFromBufferPointer(_buf,magic);
++		if(magic!=XSDK_SAVE_MAGIC){CloseFile(file);PcSaveHelper.nErrorCode=SAVESTATUS_ERR_DATA_INVALID;return false;}
++#endif
+ 		ReadDataFromBufferPointer(_buf, CGame::currLevel);
+ 		ReadDataFromBufferPointer(_buf, TheCamera.GetMatrix().GetPosition().x);
+ 		ReadDataFromBufferPointer(_buf, TheCamera.GetMatrix().GetPosition().y);
+diff --git a/src/save/PCSave.cpp b/src/save/PCSave.cpp
+index a33e9d9..2b551d4 100644
+--- a/src/save/PCSave.cpp
++++ b/src/save/PCSave.cpp
+@@ -11,6 +11,10 @@
+ #include "Messages.h"
+ #include "PCSave.h"
+ #include "Text.h"
++#include "Script.h"
++#include "World.h"
++#include "PlayerPed.h"
++#include "Frontend.h"
+ 
+ const char* _psGetUserFilesFolder();
+ 
+@@ -41,6 +45,21 @@ C_PcSave::DeleteSlot(int32 slot)
+ int8
+ C_PcSave::SaveSlot(int32 slot)
+ {
++#ifdef GTA_LCS_XSDK
++	// Native saves contain the player and resident world, not mission NPCs or
++	// streamed mission bytecode. Reject unsupported snapshots before opening a slot.
++	CPlayerPed *player=FindPlayerPed();
++	bool streamedMission=CTheScripts::bAlreadyRunningAMissionScript;
++	for(CRunningScript *s=CTheScripts::pActiveScripts;s;s=s->next)
++		if(s->m_nIp>=CTheScripts::MainScriptSize)streamedMission=true;
++	// The resident safehouse script sets OnAMission while its own save UI is
++	// open. That lock is not a streamed mission and must not reject the save.
++	bool missionLock=CTheScripts::IsPlayerOnAMission() && !FrontEndMenuManager.m_OnlySaveMenu;
++	if (!player || player->bInVehicle || player->m_fHealth<=0 || streamedMission || missionLock) {
++		printf("LCS SAVE: unavailable in current player/mission state; slot preserved\n");
++		nErrorCode=SAVESTATUS_ERR_DATA_INVALID; return 2;
++	}
++#endif
+ 	MakeValidSaveName(slot);
+ 	PcSaveHelper.nErrorCode = SAVESTATUS_SUCCESSFUL;
+ 	_psGetUserFilesFolder();
+@@ -51,15 +70,18 @@ C_PcSave::SaveSlot(int32 slot)
+ #endif
+ 			DoGameSpecificStuffBeforeSave();
+ 		if (GenericSave(file)) {
+-			if (!!CFileMgr::CloseFile(file))
++			if (!!CFileMgr::CloseFile(file)) {
+ 				nErrorCode = SAVESTATUS_ERR_SAVE_CLOSE;
++				return 2;
++			}
+ 			return 0;
+ 		}
+ 
++		CFileMgr::CloseFile(file);
+ 		return 2;
+ 	}
+ 	PcSaveHelper.nErrorCode = SAVESTATUS_ERR_SAVE_CREATE;
+-	return false;
++	return 2;
+ }
+ 
+ bool
+diff --git a/src/save/SaveBuf.h b/src/save/SaveBuf.h
+index d0817e9..30fddd8 100644
+--- a/src/save/SaveBuf.h
++++ b/src/save/SaveBuf.h
+@@ -32,7 +32,7 @@ template<typename T>
+ inline void
+ ReadSaveBuf(T *out, uint8 *&buf)
+ {
+-	*out = *(T *)buf;
++	memcpy(out, buf, sizeof(T));
+ 	SkipSaveBuf(buf, sizeof(T));
+ }
+ 
+@@ -40,7 +40,7 @@ template<typename T>
+ inline void
+ ReadSaveBuf(T *out, uint8 *&buf, uint32 &length)
+ {
+-	*out = *(T *)buf;
++	memcpy(out, buf, sizeof(T));
+ 	SkipSaveBuf(buf, length, sizeof(T));
+ }
+ 
+@@ -49,7 +49,7 @@ inline T *
+ WriteSaveBuf(uint8 *&buf, const T &value)
+ {
+ 	T *p = (T*)buf;
+-	*p = value;
++	memcpy(buf, &value, sizeof(T));
+ 	SkipSaveBuf(buf, sizeof(T));
+ 	return p;
+ }
+@@ -59,7 +59,7 @@ inline T *
+ WriteSaveBuf(uint8 *&buf, uint32 &length, const T &value)
+ {
+ 	T *p = (T*)buf;
+-	*p = value;
++	memcpy(buf, &value, sizeof(T));
+ 	SkipSaveBuf(buf, length, sizeof(T));
+ 	return p;
+ }
+diff --git a/src/skel/crossplatform.cpp b/src/skel/crossplatform.cpp
+index 58ab792..c02007b 100644
+--- a/src/skel/crossplatform.cpp
++++ b/src/skel/crossplatform.cpp
+@@ -1,5 +1,12 @@
+ #include "common.h"
+ #include "crossplatform.h"
++#ifdef GTA_LCS_XSDK
++#include "xsdk_paths.h"
++#include <errno.h>
++#endif
++#if defined(GTA_LCS_XSDK) && !defined(NAME_MAX)
++#define NAME_MAX 255
++#endif
+ 
+ // Codes compatible with Windows and Linux
+ #ifndef _WIN32
+@@ -26,6 +33,20 @@ void GetLocalTime_CP(SYSTEMTIME *out) {
+ // Compatible with Linux/POSIX and MinGW on Windows
+ #ifndef _WIN32
+ HANDLE FindFirstFile(const char* pathname, WIN32_FIND_DATA* firstfile) {
++#ifdef GTA_LCS_XSDK
++    if(!pathname || !firstfile) { errno=EINVAL; return NULL; }
++    const char *pattern=pathname;
++    for(const char *p=pathname;*p;++p) if(*p=='/' || *p=='\\') pattern=p+1;
++    size_t folderBytes=pattern-pathname;
++    if(folderBytes>=sizeof(firstfile->folder) || strlen(pattern)>=sizeof(firstfile->extension)) { errno=ENAMETOOLONG; return NULL; }
++    if(folderBytes) { memcpy(firstfile->folder,pathname,folderBytes); firstfile->folder[folderBytes]=0; }
++    else strcpy(firstfile->folder,".");
++    strcpy(firstfile->extension,pattern);
++    DIR *directory=opendir(firstfile->folder);
++    if(!directory) return NULL;
++    if(FindNextFile((HANDLE)directory,firstfile)) return (HANDLE)directory;
++    closedir(directory); return NULL;
++#else
+ 	char pathCopy[MAX_PATH];
+ 	strcpy(pathCopy, pathname);
+ 
+@@ -58,9 +79,38 @@ HANDLE FindFirstFile(const char* pathname, WIN32_FIND_DATA* firstfile) {
+ 		return NULL;
+ 
+ 	return d;
++#endif
+ }
+ 
++#ifdef GTA_LCS_XSDK
++// Windows-style filename wildcards, case insensitive; no directory traversal.
++static bool matchFile(const char *pattern,const char *name) {
++    const char *star=NULL,*retry=NULL;
++    while(*name) {
++        if(*pattern=='?' || tolower((unsigned char)*pattern)==tolower((unsigned char)*name)) { ++pattern; ++name; }
++        else if(*pattern=='*') { star=pattern++; retry=name; }
++        else if(star) { pattern=star+1; name=++retry; }
++        else return false;
++    }
++    while(*pattern=='*') ++pattern;
++    return !*pattern;
++}
++#endif
++
+ bool FindNextFile(HANDLE d, WIN32_FIND_DATA* finddata) {
++#ifdef GTA_LCS_XSDK
++    if(!d || !finddata) { errno=EINVAL; return false; }
++    dirent *entry;
++    while((entry=readdir((DIR*)d))!=NULL) {
++        if(!matchFile(finddata->extension,entry->d_name)) continue;
++        char path[MAX_PATH]; struct stat st;
++        int n=snprintf(path,sizeof path,"%s/%s",finddata->folder,entry->d_name);
++        if(n<0 || (size_t)n>=sizeof path || stat(path,&st) || !S_ISREG(st.st_mode)) continue;
++        snprintf(finddata->cFileName,sizeof finddata->cFileName,"%s",entry->d_name);
++        finddata->ftLastWriteTime=st.st_mtime; return true;
++    }
++    return false;
++#else
+ 	dirent *file;
+ 	static struct stat fileStats;
+ 	static char path[PATH_MAX], relativepath[NAME_MAX + sizeof(finddata->folder) + 1];
+@@ -80,6 +130,7 @@ bool FindNextFile(HANDLE d, WIN32_FIND_DATA* finddata) {
+ 		}
+ 	}
+ 	return false;
++#endif
+ }
+ 
+ void GetDateFormat(int unused1, int unused2, SYSTEMTIME* in, int unused3, char* out, int size) {
+@@ -157,6 +208,9 @@ FILE* _fcaseopen(char const* filename, char const* mode)
+ 
+ int _caserename(const char *old_filename, const char *new_filename)
+ {
++#ifdef GTA_LCS_XSDK
++    return rename(old_filename,new_filename);
++#else
+     int result;
+     char *real_old = casepath(old_filename);
+     char *real_new = casepath(new_filename);
+@@ -176,12 +230,20 @@ int _caserename(const char *old_filename, const char *new_filename)
+     free(real_new);
+ 
+     return result;
++#endif
+ }
+ 
+ // Case-insensitivity on linux (from https://github.com/OneSadCookie/fcaseopen)
+ // Returned string should freed manually (if exists)
+ char* casepath(char const* path, bool checkPathFirst)
+ {
++#ifdef GTA_LCS_XSDK
++    // Native Xbox file lookup already ignores case and accepts both separators.
++    (void)checkPathFirst;
++    char resolved[MAX_PATH];
++    if(lcs_xsdk_normalize_path(path,resolved,sizeof resolved)) return NULL;
++    return strdup(resolved);
++#else
+     if (checkPathFirst && access(path, F_OK) != -1) {
+         // File path is correct
+         return nil;
+@@ -291,6 +353,7 @@ char* casepath(char const* path, bool checkPathFirst)
+         printf("\n\ncasepath: Corrected path length is longer then original+2:\n\tOriginal: %s (%zu chars)\n\tCorrected: %s (%zu chars)\n\n", path, l, out, rl);
+     }
+     return out;
++#endif
+ }
+ #endif
+ 
+diff --git a/src/skel/crossplatform.h b/src/skel/crossplatform.h
+index 4ab7d15..0415b24 100644
+--- a/src/skel/crossplatform.h
++++ b/src/skel/crossplatform.h
+@@ -1,5 +1,11 @@
++#ifdef GTA_LCS_XSDK
++#include <xsdk_input.h>
++#endif
+ #include <time.h>
+ #include <limits.h>
++#if defined(GTA_LCS_XSDK) && !defined(PATH_MAX)
++#define PATH_MAX 1024
++#endif
+ 
+ // This is the common include for platform/renderer specific skeletons(glfw.cpp, win.cpp etc.) and using cross platform things (like Windows directories wrapper, platform specific global arrays etc.) 
+ // Functions that's different on glfw and win but have same signature, should be located on platform.h.
+@@ -60,7 +66,7 @@ int _caserename(const char *old_filename, const char *new_filename);
+ #define caserename _caserename
+ #endif
+ 
+-#ifdef RW_GL3
++#if defined(RW_GL3) || defined(GTA_LCS_XSDK)
+ typedef struct
+ {
+     GLFWwindow* window;
+diff --git a/src/text/Text.cpp b/src/text/Text.cpp
+index a6ff5fc..5c75dca 100644
+--- a/src/text/Text.cpp
++++ b/src/text/Text.cpp
+@@ -8,6 +8,21 @@
+ #include "Messages.h"
+ #include "Text.h"
+ #include "Timer.h"
++#ifdef GTA_LCS_XSDK
++#include "lcs_endian.h"
++static bool ValidGxtTables(const CKeyArray &keys,const CData &data)
++{
++	if(keys.numEntries<=0 || data.numChars<=0) return false;
++	for(int i=0;i<keys.numEntries;++i) {
++		uint32 off=keys.entries[i].valueOffset;
++		if((off&1) || off/2>=uint32(data.numChars)) return false;
++		int j=off/2; while(j<data.numChars && data.chars[j]) ++j;
++		if(j==data.numChars) return false;
++		if(i && strncmp(keys.entries[i-1].key,keys.entries[i].key,8)>0) return false;
++	}
++	return true;
++}
++#endif
+ 
+ wchar WideErrorString[25];
+ 
+@@ -16,6 +31,7 @@ CText *CText::msInstance = nil;
+ CText::CText(void)
+ {
+ 	encoding = 'e';
++	bIsLoaded = false;
+ 	bHasMissionTextOffsets = false;
+ 	bIsMissionTextLoaded = false;
+ 	memset(szMissionTableName, 0, sizeof(szMissionTableName));
+@@ -25,7 +41,7 @@ CText::CText(void)
+ void
+ CText::Load(void)
+ {
+-	char filename[32];
++	char filename[32]="AMERICAN.GXT";
+ 	size_t offset;
+ 	int file;
+ 	bool tkey_loaded = false, tdat_loaded = false;
+@@ -67,10 +83,12 @@ CText::Load(void)
+ 	}
+ 
+ 	file = CFileMgr::OpenFile(filename, "rb");
++	if(file<=0) { CFileMgr::SetDir(""); return; }
+ 
+ 	offset = 0;
+ 	while (!tkey_loaded || !tdat_loaded) {
+ 		ReadChunkHeader(&m_ChunkHeader, file, &offset);
++		if(m_ChunkHeader.size<0 || CFileMgr::GetErrorReadWrite(file)) break;
+ 		if (m_ChunkHeader.size != 0) {
+ 			if (strncmp(m_ChunkHeader.magic, "TABL", 4) == 0) {
+ 				MissionTextOffsets.Load(m_ChunkHeader.size, file, &offset, 0x58000);
+@@ -91,7 +109,10 @@ CText::Load(void)
+ 	keyArray.Update(data.chars);
+ 	CFileMgr::CloseFile(file);
+ 	CFileMgr::SetDir("");
+-	bIsLoaded = true;
++	bIsLoaded = tkey_loaded && tdat_loaded && keyArray.numEntries>0 && data.numChars>0;
++#ifdef GTA_LCS_XSDK
++	bIsLoaded = bIsLoaded && ValidGxtTables(keyArray,data);
++#endif
+ }
+ 
+ void
+@@ -110,6 +131,27 @@ CText::Unload(void)
+ wchar*
+ CText::Get(const char *key)
+ {
++#ifdef GTA_LCS_XSDK
++	if(FrontEndMenuManager.m_PrefsLanguage==CMenuManager::LANGUAGE_AMERICAN){
++		struct NativeMessage{const char *key,*ascii;wchar text[160];};
++		static NativeMessage native[]={
++         {"FEM_FRM","Frame rate cap",{}},
++         {"XSF30","30 FPS",{}},
++         {"XSF60","Up to 60 FPS",{}},
++         {"XSFXAA","FXAA",{}},
++		 {"FES_CMP","Could not save the game. Check the game folder and available storage, then try again.",{}},
++		 {"FESZ_WR","Saving game. Please wait.",{}},
++		 {"FELD_WR","Loading game. Please wait.",{}},
++		 {"FES_SSC","Game saved successfully.",{}},
++		 {"FED_LFL","Could not load this save. Select a valid save slot.",{}}
++		};
++		for(auto &message:native)if(!strncmp(key,message.key,8)){
++			if(!message.text[0])for(size_t i=0;message.ascii[i];++i)message.text[i]=(unsigned char)message.ascii[i];
++			return message.text;
++		}
++	}
++#endif
++
+ 	uint8 result = false;
+ #if defined (FIX_BUGS) || defined(FIX_BUGS_64)
+ 	wchar *outstr = keyArray.Search(key, data.chars, &result);
+@@ -205,6 +247,14 @@ CText::GetNameOfLoadedMissionText(char *outName)
+ void
+ CText::ReadChunkHeader(ChunkHeader *buf, int32 file, size_t *offset)
+ {
++#ifdef GTA_LCS_XSDK
++	unsigned char raw[8];
++	size_t n=CFileMgr::Read(file,(const char*)raw,sizeof raw); *offset+=n;
++	if(n!=sizeof raw) { memset(buf,0,sizeof *buf); buf->size=-1; return; }
++	memcpy(buf->magic,raw,4); buf->size=(int32)lcs_load_u32le(raw+4);
++	if(buf->size>16*1024*1024) buf->size=-1;
++	return;
++#endif
+ #ifdef THIS_IS_STUPID
+ 	char *_buf = (char*)buf;
+ 	for (int i = 0; i < sizeof(ChunkHeader); i++) {
+@@ -221,7 +271,8 @@ CText::ReadChunkHeader(ChunkHeader *buf, int32 file, size_t *offset)
+ void
+ CText::LoadMissionText(char *MissionTableName)
+ {
+-	char filename[32];
++	char filename[32]="AMERICAN.GXT";
++	bIsMissionTextLoaded = false;
+ 	CMessages::ClearAllMessagesDisplayedByGame();
+ 
+ 	mission_keyArray.Unload();
+@@ -231,7 +282,7 @@ CText::LoadMissionText(char *MissionTableName)
+ 	int missionTableId = 0;
+ 
+ 	for (missionTableId = 0; missionTableId < MissionTextOffsets.size; missionTableId++) {
+-		if (strncmp(MissionTextOffsets.data[missionTableId].szMissionName, MissionTableName, strlen(MissionTextOffsets.data[missionTableId].szMissionName)) == 0) {
++		if (strncmp(MissionTextOffsets.data[missionTableId].szMissionName, MissionTableName, sizeof(MissionTextOffsets.data[missionTableId].szMissionName)) == 0) {
+ 			search_result = true;
+ 			break;
+ 		}
+@@ -273,6 +324,7 @@ CText::LoadMissionText(char *MissionTableName)
+ 	}
+ 	CTimer::Suspend();
+ 	int file = CFileMgr::OpenFile(filename, "rb");
++	if(file<=0) { CTimer::Resume(); CFileMgr::SetDir(""); return; }
+ 	CFileMgr::Seek(file, MissionTextOffsets.data[missionTableId].offset, SEEK_SET);
+ 
+ 	char TableCheck[8];
+@@ -285,6 +337,7 @@ CText::LoadMissionText(char *MissionTableName)
+ 	while (!tkey_loaded || !tdat_loaded) {
+ 		size_t bytes_read = 0;
+ 		ReadChunkHeader(&m_ChunkHeader, file, &bytes_read);
++		if(m_ChunkHeader.size<0 || CFileMgr::GetErrorReadWrite(file)) break;
+ 		if (m_ChunkHeader.size != 0) {
+ 			if (strncmp(m_ChunkHeader.magic, "TKEY", 4) == 0) {
+ 				size_t bytes_read = 0;
+@@ -304,7 +357,10 @@ CText::LoadMissionText(char *MissionTableName)
+ 	CTimer::Resume();
+ 	CFileMgr::SetDir("");
+ 	strcpy(szMissionTableName, MissionTableName);
+-	bIsMissionTextLoaded = true;
++	bIsMissionTextLoaded = tkey_loaded && tdat_loaded && mission_keyArray.numEntries>0 && mission_data.numChars>0;
++#ifdef GTA_LCS_XSDK
++	bIsMissionTextLoaded = bIsMissionTextLoaded && ValidGxtTables(mission_keyArray,mission_data);
++#endif
+ }
+ 
+ bool
+@@ -316,6 +372,15 @@ CText::IsLoaded()
+ void
+ CKeyArray::Load(size_t length, int file, size_t* offset)
+ {
++#ifdef GTA_LCS_XSDK
++	Unload();
++	if(length%sizeof(CKeyEntry) || length/sizeof(CKeyEntry)>32767) return;
++	numEntries=length/sizeof(CKeyEntry); entries=new CKeyEntry[numEntries];
++	size_t got=CFileMgr::Read(file,(const char*)entries,length); *offset+=got;
++	if(got!=length) { Unload(); return; }
++	for(int i=0;i<numEntries;++i) entries[i].valueOffset=lcs_load_u32le(&entries[i].valueOffset);
++	return;
++#endif
+ 	char *rawbytes;
+ 
+ 	// You can make numEntries size_t if you want to exceed 32-bit boundaries, everything else should be ready.
+@@ -362,7 +427,7 @@ CKeyArray::BinarySearch(const char *key, CKeyEntry *entries, int16 low, int16 hi
+ 		return nil;
+ 
+ 	mid = (low + high)/2;
+-	diff = strcmp(key, entries[mid].key);
++	diff = strncmp(key, entries[mid].key, sizeof(entries[mid].key));
+ 	if(diff == 0)
+ 		return &entries[mid];
+ 	if(diff < 0)
+@@ -410,6 +475,16 @@ CKeyArray::Search(const char *key, uint8 *result)
+ void
+ CData::Load(size_t length, int file, size_t * offset)
+ {
++#ifdef GTA_LCS_XSDK
++	Unload();
++	if(length%sizeof(wchar) || length>16*1024*1024) return;
++	numChars=length/sizeof(wchar); chars=new wchar[numChars];
++	size_t got=CFileMgr::Read(file,(const char*)chars,length); *offset+=got;
++	if(got!=length) { Unload(); return; }
++	unsigned char *bytes=(unsigned char*)chars;
++	for(int i=0;i<numChars;++i) chars[i]=uint16(bytes[2*i])|(uint16(bytes[2*i+1])<<8);
++	return;
++#endif
+ 	char *rawbytes;
+ 
+ 	// You can make numChars size_t if you want to exceed 32-bit boundaries, everything else should be ready.
+@@ -439,6 +514,15 @@ CData::Unload(void)
+ void
+ CMissionTextOffsets::Load(size_t table_size, int file, size_t *offset, int)
+ {
++#ifdef GTA_LCS_XSDK
++	size=0;
++	if(table_size%sizeof(Entry) || table_size>sizeof data) return;
++	size_t got=CFileMgr::Read(file,(const char*)data,table_size); *offset+=got;
++	if(got!=table_size) return;
++	size=table_size/sizeof(Entry);
++	for(int i=0;i<size;++i) data[i].offset=lcs_load_u32le(&data[i].offset);
++	return;
++#endif
+ #ifdef THIS_IS_STUPID
+ 	size_t num_of_entries = table_size / sizeof(CMissionTextOffsets::Entry);
+ 	for (size_t mi = 0; mi < num_of_entries; mi++) {
+diff --git a/src/vehicles/Cranes.cpp b/src/vehicles/Cranes.cpp
+index d4b58f0..16b4d54 100644
+--- a/src/vehicles/Cranes.cpp
++++ b/src/vehicles/Cranes.cpp
+@@ -38,7 +38,11 @@
+ #define DEFAULT_OFFSET (20.0f)
+ 
+ #ifdef COMPATIBLE_SAVES
++#ifdef GTA_LCS_XSDK
++#define CRANES_SAVE_SIZE (NUM_CRANES * (124 + 3 * (sizeof(CVector) - 12)))
++#else
+ #define CRANES_SAVE_SIZE 0x3E0
++#endif
+ #else
+ #define CRANES_SAVE_SIZE sizeof(aCranes)
+ #endif

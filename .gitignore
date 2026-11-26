@@ -1,0 +1,27 @@
+# Runtime/build inputs are private and never belong in this source repository.
+/work/*
+!/work/lcs/
+/work/lcs/*
+!/work/lcs/relcs/
+!/work/lcs/tools/
+/outputs/GTA-LCS-Xbox360/logs/*
+!/outputs/GTA-LCS-Xbox360/logs/.gitkeep
+/outputs/GTA-LCS-Xbox360/console-test/
+/outputs/GTA-LCS-Xbox360/test-save/
+**/__pycache__/
+*.pyc
+*.log
+*.ppm
+*.pcm
+*.wav
+*.iso
+*.rom
+*.z64
+*.n64
+*.v64
+*.img
+*.txd
+*.dff
+GTAVCsf*.b
+.env
+.env.*
