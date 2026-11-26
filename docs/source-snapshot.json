@@ -4754,8 +4754,7 @@
     },
     {
       "path": "outputs/GTA-LCS-Xbox360/tools/prepare_console.py",
-      "sha256": "937ba6308a11956324d89d34f1a9888c30df27e370dd8a029f66b3fe86c54c46",
-      "working_source_sha256": "0b469674841c4e9251243b2b2219e2265ce3d84c9473719cefe449757d80b343"
+      "sha256": "937ba6308a11956324d89d34f1a9888c30df27e370dd8a029f66b3fe86c54c46"
     },
     {
       "path": "outputs/GTA-LCS-Xbox360/tools/report_safehouse.py",
